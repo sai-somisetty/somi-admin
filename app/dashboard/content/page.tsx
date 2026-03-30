@@ -86,6 +86,7 @@ export default function ContentPage() {
   const [generating, setGenerating] = useState(false)
   const [generatedData, setGeneratedData] = useState<GeneratedData | null>(null)
   const [currentVariation, setCurrentVariation] = useState<1 | 2 | 3>(1)
+  const [showPageSelector, setShowPageSelector] = useState(false)
 
   useEffect(() => {
     const u = getStoredUser()
@@ -296,7 +297,6 @@ export default function ContentPage() {
   }
 
   function switchVariation(v: 1 | 2 | 3) {
-    // Save current variation text back to form before switching
     setForm(prev => {
       const updated = { ...prev }
       if (currentVariation === 1) updated.tenglish = prev.tenglish
@@ -385,183 +385,52 @@ export default function ContentPage() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* PANE 1 — Tree nav */}
-      <aside
-        className="shrink-0 flex flex-col border-r border-gray-200 overflow-y-auto"
-        style={{ width: 280, background: 'var(--surface)' }}
-      >
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-            CMA Foundation
-          </h2>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-            Paper 1 — Business Laws
-          </p>
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center h-20">
-            <div className="w-5 h-5 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : (
-          <div className="py-2">
-            {tree.map(node => (
-              <div key={node.chapter.chapter_number}>
-                <button
-                  onClick={() => toggleChapter(node.chapter.chapter_number)}
-                  className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-gray-50 transition-colors"
-                >
-                  <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                    {expandedChapters.has(node.chapter.chapter_number) ? '▼' : '►'}
-                  </span>
-                  <span className="text-xs font-semibold flex-1 leading-tight" style={{ color: 'var(--text)' }}>
-                    Ch {node.chapter.chapter_number} — {node.chapter.title}
-                  </span>
-                  <StatusDot status={node.chapter.status} />
-                </button>
-
-                {expandedChapters.has(node.chapter.chapter_number) &&
-                  node.subChapters.map(sc => {
-                    const subKey = `${sc.chapter_number}-${sc.sub_chapter_id}`
-                    const subExpanded = expandedSubs.has(subKey)
-                    return (
-                      <div key={sc.sub_chapter_id}>
-                        <div className="flex items-center group">
-                          <button
-                            onClick={() => {
-                              toggleSub(subKey)
-                              setSelectedSubChapter({
-                                course_id: sc.course_id,
-                                paper_number: sc.paper_number,
-                                chapter_number: sc.chapter_number,
-                                sub_chapter_id: sc.sub_chapter_id,
-                                sub_chapter_title: `${sc.sub_chapter_id} ${sc.title}`,
-                              })
-                              setSelectedPage(null)
-                            }}
-                            className="flex items-center gap-2 flex-1 pl-7 pr-2 py-1.5 text-left hover:bg-gray-50 transition-colors"
-                          >
-                            <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                              {subExpanded ? '▼' : '►'}
-                            </span>
-                            <span className="text-xs flex-1 leading-tight" style={{ color: 'var(--muted)' }}>
-                              {sc.sub_chapter_id} {sc.title}
-                            </span>
-                          </button>
-                          <button
-                            onClick={(e) => openAddPage({
-                              course_id: sc.course_id,
-                              paper_number: sc.paper_number,
-                              chapter_number: sc.chapter_number,
-                              sub_chapter_id: sc.sub_chapter_id,
-                              sub_chapter_title: `${sc.sub_chapter_id} ${sc.title}`,
-                            }, e)}
-                            title="Add a page to this sub-chapter"
-                            className="shrink-0 mr-2 text-xs px-1.5 py-0.5 rounded font-semibold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                            style={{ background: '#FEF3E8', color: 'var(--accent)' }}
-                          >
-                            + Page
-                          </button>
-                        </div>
-
-                        {subExpanded && sc.pages.map(pg => {
-                          const isActive = selectedPage?.id === pg.id
-                          return (
-                            <button
-                              key={pg.id}
-                              onClick={() => selectPage(pg)}
-                              className="flex items-center gap-2 w-full pl-12 pr-3 py-1.5 text-left transition-colors"
-                              style={{
-                                background: isActive ? '#FEF3E8' : 'transparent',
-                                borderLeft: isActive ? '3px solid var(--accent)' : '3px solid transparent',
-                              }}
-                            >
-                              <span className="text-xs">📄</span>
-                              <span
-                                className="text-xs flex-1"
-                                style={{ color: isActive ? 'var(--accent)' : 'var(--muted)', fontWeight: isActive ? 600 : 400 }}
-                              >
-                                Page {pg.book_page}
-                              </span>
-                              <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                                {pg.total_concepts > 0 ? `${pg.total_concepts} concepts` : '0 concepts'}
-                              </span>
-                            </button>
-                          )
-                        })}
-                        {subExpanded && sc.pages.length === 0 && (
-                          <p className="pl-12 pr-3 py-1.5 text-xs" style={{ color: 'var(--muted)' }}>
-                            No pages — click + to add
-                          </p>
-                        )}
-                      </div>
-                    )
-                  })}
-              </div>
-            ))}
-          </div>
-        )}
-      </aside>
-
-      {/* PANE 2 — Center workspace */}
+      {/* PANE 1 — Center workspace */}
       <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
-        {!selectedPage ? (
-          (() => {
-            const selSubNode = selectedSubChapter
-              ? tree
-                  .find(n => n.chapter.chapter_number === selectedSubChapter.chapter_number)
-                  ?.subChapters.find(s => s.sub_chapter_id === selectedSubChapter.sub_chapter_id)
-              : null
-            const subHasNoPages = selSubNode !== undefined && selSubNode !== null && selSubNode.pages.length === 0
 
-            if (selectedSubChapter && subHasNoPages) {
-              return (
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center" style={{ maxWidth: 320 }}>
-                    <span className="text-5xl">📄</span>
-                    <p className="mt-4 text-base font-semibold" style={{ color: 'var(--text)' }}>
-                      No pages yet for this sub-chapter
-                    </p>
-                    <p className="text-sm mt-2" style={{ color: 'var(--muted)', lineHeight: 1.5 }}>
-                      <strong>{selectedSubChapter.sub_chapter_title}</strong> has no pages mapped yet.
-                    </p>
-                    <button
-                      onClick={() => openAddPage(selectedSubChapter)}
-                      className="mt-6 inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold text-white cursor-pointer transition-opacity hover:opacity-90"
-                      style={{ background: 'var(--accent)', boxShadow: '0 4px 20px rgba(230,126,34,0.35)' }}
-                    >
-                      + Add First Page
-                    </button>
-                  </div>
-                </div>
-              )
-            }
-
-            return (
-              <div className="flex-1 flex items-center justify-center">
-                <div className="text-center">
-                  <span className="text-4xl">📄</span>
-                  <p className="mt-3 font-medium" style={{ color: 'var(--text)' }}>
-                    ← Select a page from the tree to start adding concepts
-                  </p>
-                  <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
-                    Expand chapters and sub-chapters to find pages
-                  </p>
-                </div>
-              </div>
-            )
-          })()
-        ) : (
-          <>
-            {/* Breadcrumb */}
-            <div className="px-5 py-3 border-b border-gray-200 bg-white shrink-0">
-              <p className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
+        {/* Breadcrumb bar */}
+        <div className="px-5 py-2.5 border-b border-gray-200 bg-white shrink-0 flex items-center justify-between gap-4">
+          <p className="text-xs font-medium truncate" style={{ color: 'var(--muted)' }}>
+            {selectedPage ? (
+              <>
                 Chapter {selectedChapter?.chapter_number} ›{' '}
                 {selectedSub?.sub_chapter_id} {selectedSub?.title} ›{' '}
                 <span style={{ color: 'var(--accent)' }}>Page {selectedPage.book_page}</span>
-              </p>
-            </div>
+              </>
+            ) : (
+              <span>No page selected — click &ldquo;Change Page&rdquo; to browse</span>
+            )}
+          </p>
+          <button
+            onClick={() => setShowPageSelector(true)}
+            className="shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
+            style={{ color: 'var(--text)' }}
+          >
+            📂 Change Page
+          </button>
+        </div>
 
+        {!selectedPage ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <span className="text-4xl">📄</span>
+              <p className="mt-3 font-medium" style={{ color: 'var(--text)' }}>
+                Select a page to start adding concepts
+              </p>
+              <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
+                Click &ldquo;Change Page&rdquo; above to browse chapters and pages
+              </p>
+              <button
+                onClick={() => setShowPageSelector(true)}
+                className="mt-5 inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold text-white cursor-pointer transition-opacity hover:opacity-90"
+                style={{ background: 'var(--accent)', boxShadow: '0 4px 20px rgba(230,126,34,0.35)' }}
+              >
+                📂 Browse Pages
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
             {/* Concepts list + form */}
             <div className="flex-1 overflow-y-auto px-5 py-4">
               {concepts.length === 0 && !showForm && (
@@ -698,7 +567,6 @@ export default function ContentPage() {
                           />
                         </div>
 
-                        {/* Generate button */}
                         <button
                           onClick={generateWithAI}
                           disabled={generating || !form.text.trim()}
@@ -725,7 +593,6 @@ export default function ContentPage() {
                       <label className={labelCls} style={{ color: 'var(--text)' }}>
                         🧠 Mama&apos;s Tenglish
                       </label>
-                      {/* Variation tabs */}
                       <div className="flex gap-1 mb-2">
                         {([1, 2, 3] as const).map(v => (
                           <button
@@ -929,6 +796,24 @@ export default function ContentPage() {
         )}
       </div>
 
+      {/* PANE 2 — PDF Viewer */}
+      <aside
+        className="shrink-0 flex flex-col border-l border-gray-200"
+        style={{ width: 420, background: '#f5f5f5' }}
+      >
+        {selectedPage ? (
+          <div style={{ height: '100%' }}>
+            <PDFViewer bookPage={selectedPage.book_page} />
+          </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center h-full">
+            <p className="text-sm text-center px-4" style={{ color: '#aaa' }}>
+              Select a page to see PDF
+            </p>
+          </div>
+        )}
+      </aside>
+
       {/* ── Add Page Modal ── */}
       {addPageTarget && (
         <div
@@ -1028,23 +913,135 @@ export default function ContentPage() {
         </div>
       )}
 
-      {/* PANE 3 — PDF Viewer */}
-      <aside
-        className="shrink-0 flex flex-col border-l border-gray-200"
-        style={{ width: 420, background: '#f5f5f5' }}
-      >
-        {selectedPage ? (
-          <div style={{ height: '100%' }}>
-            <PDFViewer bookPage={selectedPage.book_page} />
+      {/* ── Page Selector Modal ── */}
+      {showPageSelector && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowPageSelector(false) }}
+        >
+          <div
+            className="rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            style={{ background: 'white', width: 600, maxHeight: '80vh' }}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
+              <div>
+                <h2 className="text-base font-bold" style={{ color: 'var(--text)' }}>Select Page</h2>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>CMA Foundation · Paper 1 — Business Laws</p>
+              </div>
+              <button
+                onClick={() => setShowPageSelector(false)}
+                className="rounded-lg w-8 h-8 flex items-center justify-center text-lg cursor-pointer hover:bg-gray-100 transition-colors"
+                style={{ color: 'var(--muted)' }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Tree */}
+            <div className="overflow-y-auto flex-1 py-2">
+              {loading ? (
+                <div className="flex items-center justify-center h-20">
+                  <div className="w-5 h-5 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                tree.map(node => (
+                  <div key={node.chapter.chapter_number}>
+                    <button
+                      onClick={() => toggleChapter(node.chapter.chapter_number)}
+                      className="flex items-center gap-2 w-full px-5 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                    >
+                      <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                        {expandedChapters.has(node.chapter.chapter_number) ? '▼' : '►'}
+                      </span>
+                      <span className="text-sm font-semibold flex-1 leading-tight" style={{ color: 'var(--text)' }}>
+                        Ch {node.chapter.chapter_number} — {node.chapter.title}
+                      </span>
+                      <StatusDot status={node.chapter.status} />
+                    </button>
+
+                    {expandedChapters.has(node.chapter.chapter_number) &&
+                      node.subChapters.map(sc => {
+                        const subKey = `${sc.chapter_number}-${sc.sub_chapter_id}`
+                        const subExpanded = expandedSubs.has(subKey)
+                        return (
+                          <div key={sc.sub_chapter_id}>
+                            <div className="flex items-center group">
+                              <button
+                                onClick={() => toggleSub(subKey)}
+                                className="flex items-center gap-2 flex-1 pl-10 pr-2 py-2 text-left hover:bg-gray-50 transition-colors"
+                              >
+                                <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                                  {subExpanded ? '▼' : '►'}
+                                </span>
+                                <span className="text-sm flex-1 leading-tight" style={{ color: 'var(--muted)' }}>
+                                  {sc.sub_chapter_id} {sc.title}
+                                </span>
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setShowPageSelector(false)
+                                  openAddPage({
+                                    course_id: sc.course_id,
+                                    paper_number: sc.paper_number,
+                                    chapter_number: sc.chapter_number,
+                                    sub_chapter_id: sc.sub_chapter_id,
+                                    sub_chapter_title: `${sc.sub_chapter_id} ${sc.title}`,
+                                  })
+                                }}
+                                title="Add a page to this sub-chapter"
+                                className="shrink-0 mr-4 text-xs px-2 py-1 rounded font-semibold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                style={{ background: '#FEF3E8', color: 'var(--accent)' }}
+                              >
+                                + Add Page
+                              </button>
+                            </div>
+
+                            {subExpanded && sc.pages.map(pg => {
+                              const isActive = selectedPage?.id === pg.id
+                              return (
+                                <button
+                                  key={pg.id}
+                                  onClick={() => {
+                                    selectPage(pg)
+                                    setShowPageSelector(false)
+                                  }}
+                                  className="flex items-center gap-2 w-full pl-16 pr-5 py-2 text-left transition-colors hover:bg-orange-50"
+                                  style={{
+                                    background: isActive ? '#FEF3E8' : undefined,
+                                    borderLeft: isActive ? '3px solid var(--accent)' : '3px solid transparent',
+                                  }}
+                                >
+                                  <span className="text-xs">📄</span>
+                                  <span
+                                    className="text-sm flex-1"
+                                    style={{ color: isActive ? 'var(--accent)' : 'var(--text)', fontWeight: isActive ? 600 : 400 }}
+                                  >
+                                    Page {pg.book_page}
+                                  </span>
+                                  <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                                    {pg.total_concepts > 0 ? `${pg.total_concepts} concepts` : '0 concepts'}
+                                  </span>
+                                </button>
+                              )
+                            })}
+                            {subExpanded && sc.pages.length === 0 && (
+                              <p className="pl-16 pr-5 py-2 text-xs" style={{ color: 'var(--muted)' }}>
+                                No pages yet — hover sub-chapter to add
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
-        ) : (
-          <div className="flex-1 flex items-center justify-center h-full">
-            <p className="text-sm text-center px-4" style={{ color: '#aaa' }}>
-              Select a page to see PDF
-            </p>
-          </div>
-        )}
-      </aside>
+        </div>
+      )}
     </div>
   )
 }
