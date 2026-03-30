@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
-import type { AuthUser, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
+import type { AuthUser, Paper, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
 
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false })
 
@@ -11,6 +11,11 @@ interface TreeNode {
   chapter: Chapter
   subChapters: (SubChapter & { pages: ContentPage[] })[]
   expanded: boolean
+}
+
+interface PaperNode {
+  paper: Paper
+  chapters: TreeNode[]
 }
 
 interface AddPageTarget {
@@ -68,8 +73,9 @@ type FormState = typeof emptyForm
 
 export default function ContentPage() {
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [tree, setTree] = useState<TreeNode[]>([])
-  const [expandedChapters, setExpandedChapters] = useState<Set<number>>(new Set([1]))
+  const [tree, setTree] = useState<PaperNode[]>([])
+  const [expandedPapers, setExpandedPapers] = useState<Set<number>>(new Set([1]))
+  const [expandedChapters, setExpandedChapters] = useState<Set<string>>(new Set())
   const [expandedSubs, setExpandedSubs] = useState<Set<string>>(new Set())
   const [selectedPage, setSelectedPage] = useState<ContentPage | null>(null)
   const [concepts, setConcepts] = useState<Concept[]>([])
@@ -98,23 +104,29 @@ export default function ContentPage() {
 
   async function loadTree() {
     setLoading(true)
-    const [{ data: chapters }, { data: subChapters }, { data: pages }] =
+    const [{ data: papers }, { data: chapters }, { data: subChapters }, { data: pages }] =
       await Promise.all([
-        supabase.from('chapters').select('*').eq('course_id', 'cma').eq('paper_number', 1).order('chapter_number'),
-        supabase.from('sub_chapters').select('*').eq('course_id', 'cma').eq('paper_number', 1).order('chapter_number').order('sub_chapter_id'),
-        supabase.from('content_pages').select('*').eq('course_id', 'cma').eq('paper_number', 1).order('book_page'),
+        supabase.from('papers').select('*').eq('course_id', 'cma').order('paper_number'),
+        supabase.from('chapters').select('*').eq('course_id', 'cma').order('paper_number').order('chapter_number'),
+        supabase.from('sub_chapters').select('*').eq('course_id', 'cma').order('paper_number').order('chapter_number').order('sub_chapter_id'),
+        supabase.from('content_pages').select('*').eq('course_id', 'cma').order('paper_number').order('book_page'),
       ])
 
-    const nodes: TreeNode[] = (chapters || []).map(ch => ({
-      chapter: ch,
-      expanded: ch.chapter_number === 1,
-      subChapters: (subChapters || [])
-        .filter(sc => sc.chapter_number === ch.chapter_number)
-        .map(sc => ({
-          ...sc,
-          pages: (pages || []).filter(
-            p => p.chapter_number === ch.chapter_number && p.sub_chapter_id === sc.sub_chapter_id
-          ),
+    const nodes: PaperNode[] = (papers || []).map(paper => ({
+      paper,
+      chapters: (chapters || [])
+        .filter(ch => ch.paper_number === paper.paper_number)
+        .map(ch => ({
+          chapter: ch,
+          expanded: false,
+          subChapters: (subChapters || [])
+            .filter(sc => sc.paper_number === paper.paper_number && sc.chapter_number === ch.chapter_number)
+            .map(sc => ({
+              ...sc,
+              pages: (pages || []).filter(
+                p => p.paper_number === paper.paper_number && p.chapter_number === ch.chapter_number && p.sub_chapter_id === sc.sub_chapter_id
+              ),
+            })),
         })),
     }))
     setTree(nodes)
@@ -181,8 +193,8 @@ export default function ContentPage() {
     setGeneratedData(null)
     setCurrentVariation(1)
     const parentSub = tree
-      .flatMap(n => n.subChapters)
-      .find(s => s.chapter_number === page.chapter_number && s.sub_chapter_id === page.sub_chapter_id)
+      .flatMap(p => p.chapters.flatMap(n => n.subChapters))
+      .find(s => s.paper_number === page.paper_number && s.chapter_number === page.chapter_number && s.sub_chapter_id === page.sub_chapter_id)
     if (parentSub) {
       setSelectedSubChapter({
         course_id: page.course_id,
@@ -194,10 +206,19 @@ export default function ContentPage() {
     }
   }
 
-  function toggleChapter(chNum: number) {
+  function togglePaper(paperNum: number) {
+    setExpandedPapers(prev => {
+      const next = new Set(prev)
+      next.has(paperNum) ? next.delete(paperNum) : next.add(paperNum)
+      return next
+    })
+  }
+
+  function toggleChapter(paperNum: number, chNum: number) {
+    const key = `${paperNum}-${chNum}`
     setExpandedChapters(prev => {
       const next = new Set(prev)
-      next.has(chNum) ? next.delete(chNum) : next.add(chNum)
+      next.has(key) ? next.delete(key) : next.add(key)
       return next
     })
   }
@@ -251,10 +272,10 @@ export default function ContentPage() {
       return
     }
     const chapterNode = selectedPage
-      ? tree.find(n => n.chapter.chapter_number === selectedPage.chapter_number)?.chapter
+      ? tree.flatMap(p => p.chapters).find(n => n.chapter.paper_number === selectedPage.paper_number && n.chapter.chapter_number === selectedPage.chapter_number)?.chapter
       : null
     const subNode = selectedPage
-      ? tree.flatMap(n => n.subChapters).find(s => s.chapter_number === selectedPage.chapter_number && s.sub_chapter_id === selectedPage.sub_chapter_id)
+      ? tree.flatMap(p => p.chapters.flatMap(n => n.subChapters)).find(s => s.paper_number === selectedPage.paper_number && s.chapter_number === selectedPage.chapter_number && s.sub_chapter_id === selectedPage.sub_chapter_id)
       : null
 
     setGenerating(true)
@@ -374,11 +395,11 @@ export default function ContentPage() {
 
   const selectedSub = selectedPage
     ? tree
-        .flatMap(n => n.subChapters)
-        .find(s => s.sub_chapter_id === selectedPage.sub_chapter_id && s.chapter_number === selectedPage.chapter_number)
+        .flatMap(p => p.chapters.flatMap(n => n.subChapters))
+        .find(s => s.paper_number === selectedPage.paper_number && s.sub_chapter_id === selectedPage.sub_chapter_id && s.chapter_number === selectedPage.chapter_number)
     : null
   const selectedChapter = selectedPage
-    ? tree.find(n => n.chapter.chapter_number === selectedPage.chapter_number)?.chapter
+    ? tree.flatMap(p => p.chapters).find(n => n.chapter.paper_number === selectedPage.paper_number && n.chapter.chapter_number === selectedPage.chapter_number)?.chapter
     : null
 
   const handleDragStart = (e: React.MouseEvent) => {
@@ -425,7 +446,7 @@ export default function ContentPage() {
           <p className="text-xs font-medium truncate" style={{ color: 'var(--muted)' }}>
             {selectedPage ? (
               <>
-                Chapter {selectedChapter?.chapter_number} ›{' '}
+                Paper {selectedPage.paper_number} › Chapter {selectedChapter?.chapter_number} ›{' '}
                 {selectedSub?.sub_chapter_id} {selectedSub?.title} ›{' '}
                 <span style={{ color: 'var(--accent)' }}>Page {selectedPage.book_page}</span>
               </>
@@ -993,7 +1014,7 @@ export default function ContentPage() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
               <div>
                 <h2 className="text-base font-bold" style={{ color: 'var(--text)' }}>Select Page</h2>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>CMA Foundation · Paper 1 — Business Laws</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>CMA Foundation — All Papers</p>
               </div>
               <button
                 onClick={() => setShowPageSelector(false)}
@@ -1011,95 +1032,116 @@ export default function ContentPage() {
                   <div className="w-5 h-5 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : (
-                tree.map(node => (
-                  <div key={node.chapter.chapter_number}>
+                tree.map(paperNode => (
+                  <div key={paperNode.paper.paper_number}>
+                    {/* Paper row */}
                     <button
-                      onClick={() => toggleChapter(node.chapter.chapter_number)}
-                      className="flex items-center gap-2 w-full px-5 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                      onClick={() => togglePaper(paperNode.paper.paper_number)}
+                      className="flex items-center gap-2 w-full px-4 py-3 text-left border-b border-gray-100 hover:bg-gray-100 transition-colors"
+                      style={{ background: '#F9FAFB' }}
                     >
                       <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                        {expandedChapters.has(node.chapter.chapter_number) ? '▼' : '►'}
+                        {expandedPapers.has(paperNode.paper.paper_number) ? '▼' : '►'}
                       </span>
-                      <span className="text-sm font-semibold flex-1 leading-tight" style={{ color: 'var(--text)' }}>
-                        Ch {node.chapter.chapter_number} — {node.chapter.title}
+                      <span className="text-sm font-bold flex-1 leading-tight" style={{ color: 'var(--text)' }}>
+                        Paper {paperNode.paper.paper_number} — {paperNode.paper.title}
                       </span>
-                      <StatusDot status={node.chapter.status} />
                     </button>
 
-                    {expandedChapters.has(node.chapter.chapter_number) &&
-                      node.subChapters.map(sc => {
-                        const subKey = `${sc.chapter_number}-${sc.sub_chapter_id}`
-                        const subExpanded = expandedSubs.has(subKey)
-                        return (
-                          <div key={sc.sub_chapter_id}>
-                            <div className="flex items-center group">
-                              <button
-                                onClick={() => toggleSub(subKey)}
-                                className="flex items-center gap-2 flex-1 pl-10 pr-2 py-2 text-left hover:bg-gray-50 transition-colors"
-                              >
-                                <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                                  {subExpanded ? '▼' : '►'}
-                                </span>
-                                <span className="text-sm flex-1 leading-tight" style={{ color: 'var(--muted)' }}>
-                                  {sc.sub_chapter_id} {sc.title}
-                                </span>
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setShowPageSelector(false)
-                                  openAddPage({
-                                    course_id: sc.course_id,
-                                    paper_number: sc.paper_number,
-                                    chapter_number: sc.chapter_number,
-                                    sub_chapter_id: sc.sub_chapter_id,
-                                    sub_chapter_title: `${sc.sub_chapter_id} ${sc.title}`,
-                                  })
-                                }}
-                                title="Add a page to this sub-chapter"
-                                className="shrink-0 mr-4 text-xs px-2 py-1 rounded font-semibold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                                style={{ background: '#FEF3E8', color: 'var(--accent)' }}
-                              >
-                                + Add Page
-                              </button>
-                            </div>
+                    {expandedPapers.has(paperNode.paper.paper_number) && paperNode.chapters.map(node => {
+                      const chKey = `${paperNode.paper.paper_number}-${node.chapter.chapter_number}`
+                      return (
+                        <div key={node.chapter.chapter_number}>
+                          <button
+                            onClick={() => toggleChapter(paperNode.paper.paper_number, node.chapter.chapter_number)}
+                            className="flex items-center gap-2 w-full px-5 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                          >
+                            <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                              {expandedChapters.has(chKey) ? '▼' : '►'}
+                            </span>
+                            <span className="text-sm font-semibold flex-1 leading-tight" style={{ color: 'var(--text)' }}>
+                              Ch {node.chapter.chapter_number} — {node.chapter.title}
+                            </span>
+                            <StatusDot status={node.chapter.status} />
+                          </button>
 
-                            {subExpanded && sc.pages.map(pg => {
-                              const isActive = selectedPage?.id === pg.id
+                          {expandedChapters.has(chKey) &&
+                            node.subChapters.map(sc => {
+                              const subKey = `${sc.paper_number}-${sc.chapter_number}-${sc.sub_chapter_id}`
+                              const subExpanded = expandedSubs.has(subKey)
                               return (
-                                <button
-                                  key={pg.id}
-                                  onClick={() => {
-                                    selectPage(pg)
-                                    setShowPageSelector(false)
-                                  }}
-                                  className="flex items-center gap-2 w-full pl-16 pr-5 py-2 text-left transition-colors hover:bg-orange-50"
-                                  style={{
-                                    background: isActive ? '#FEF3E8' : undefined,
-                                    borderLeft: isActive ? '3px solid var(--accent)' : '3px solid transparent',
-                                  }}
-                                >
-                                  <span className="text-xs">📄</span>
-                                  <span
-                                    className="text-sm flex-1"
-                                    style={{ color: isActive ? 'var(--accent)' : 'var(--text)', fontWeight: isActive ? 600 : 400 }}
-                                  >
-                                    Page {pg.book_page}
-                                  </span>
-                                  <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                                    {pg.total_concepts > 0 ? `${pg.total_concepts} concepts` : '0 concepts'}
-                                  </span>
-                                </button>
+                                <div key={sc.sub_chapter_id}>
+                                  <div className="flex items-center group">
+                                    <button
+                                      onClick={() => toggleSub(subKey)}
+                                      className="flex items-center gap-2 flex-1 pl-10 pr-2 py-2 text-left hover:bg-gray-50 transition-colors"
+                                    >
+                                      <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                                        {subExpanded ? '▼' : '►'}
+                                      </span>
+                                      <span className="text-sm flex-1 leading-tight" style={{ color: 'var(--muted)' }}>
+                                        {sc.sub_chapter_id} {sc.title}
+                                      </span>
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setShowPageSelector(false)
+                                        openAddPage({
+                                          course_id: sc.course_id,
+                                          paper_number: sc.paper_number,
+                                          chapter_number: sc.chapter_number,
+                                          sub_chapter_id: sc.sub_chapter_id,
+                                          sub_chapter_title: `${sc.sub_chapter_id} ${sc.title}`,
+                                        })
+                                      }}
+                                      title="Add a page to this sub-chapter"
+                                      className="shrink-0 mr-4 text-xs px-2 py-1 rounded font-semibold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                      style={{ background: '#FEF3E8', color: 'var(--accent)' }}
+                                    >
+                                      + Add Page
+                                    </button>
+                                  </div>
+
+                                  {subExpanded && sc.pages.map(pg => {
+                                    const isActive = selectedPage?.id === pg.id
+                                    return (
+                                      <button
+                                        key={pg.id}
+                                        onClick={() => {
+                                          selectPage(pg)
+                                          setShowPageSelector(false)
+                                        }}
+                                        className="flex items-center gap-2 w-full pl-16 pr-5 py-2 text-left transition-colors hover:bg-orange-50"
+                                        style={{
+                                          background: isActive ? '#FEF3E8' : undefined,
+                                          borderLeft: isActive ? '3px solid var(--accent)' : '3px solid transparent',
+                                        }}
+                                      >
+                                        <span className="text-xs">📄</span>
+                                        <span
+                                          className="text-sm flex-1"
+                                          style={{ color: isActive ? 'var(--accent)' : 'var(--text)', fontWeight: isActive ? 600 : 400 }}
+                                        >
+                                          Page {pg.book_page}
+                                        </span>
+                                        <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                                          {pg.total_concepts > 0 ? `${pg.total_concepts} concepts` : '0 concepts'}
+                                        </span>
+                                      </button>
+                                    )
+                                  })}
+                                  {subExpanded && sc.pages.length === 0 && (
+                                    <p className="pl-16 pr-5 py-2 text-xs" style={{ color: 'var(--muted)' }}>
+                                      No pages yet — hover sub-chapter to add
+                                    </p>
+                                  )}
+                                </div>
                               )
                             })}
-                            {subExpanded && sc.pages.length === 0 && (
-                              <p className="pl-16 pr-5 py-2 text-xs" style={{ color: 'var(--muted)' }}>
-                                No pages yet — hover sub-chapter to add
-                              </p>
-                            )}
-                          </div>
-                        )
-                      })}
+                        </div>
+                      )
+                    })}
                   </div>
                 ))
               )}
