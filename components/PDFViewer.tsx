@@ -1,5 +1,5 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Document, Page as PdfPage, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -9,7 +9,6 @@ pdfjs.GlobalWorkerOptions.workerSrc =
 
 const PDF_URL = "https://rwuntjxogfrqxaphjolj.supabase.co/storage/v1/object/public/textbooks/Paper1_20-06-2024_R_CMA_F.pdf";
 const PDF_OFFSET = 8;
-const BASE_WIDTH = 420;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
 const ZOOM_STEP = 0.1;
@@ -21,7 +20,20 @@ interface Props {
 export default function PDFViewer({ bookPage }: Props) {
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1.0);
+  const [containerWidth, setContainerWidth] = useState(460);
+  const containerRef = useRef<HTMLDivElement>(null);
   const pdfPage = bookPage + PDF_OFFSET;
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect.width;
+      if (width) setContainerWidth(width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   function zoomIn() {
     setScale(s => Math.min(ZOOM_MAX, parseFloat((s + ZOOM_STEP).toFixed(1))))
@@ -54,15 +66,18 @@ export default function PDFViewer({ bookPage }: Props) {
   }
 
   return (
-    <div style={{
-      height: '100%',
-      overflow: 'auto',
-      background: '#f5f5f5',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      padding: '12px 16px 16px',
-    }}>
+    <div
+      ref={containerRef}
+      style={{
+        height: '100%',
+        overflow: 'auto',
+        background: '#f5f5f5',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        padding: '12px 16px 16px',
+      }}
+    >
       {/* Zoom toolbar */}
       <div style={{
         display: 'flex',
@@ -120,7 +135,7 @@ export default function PDFViewer({ bookPage }: Props) {
       >
         <PdfPage
           pageNumber={pdfPage}
-          width={Math.round(BASE_WIDTH * scale)}
+          width={Math.round((containerWidth - 32) * scale)}
           renderTextLayer={true}
           renderAnnotationLayer={false}
         />

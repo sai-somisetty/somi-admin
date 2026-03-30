@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
 import type { AuthUser, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
@@ -88,6 +87,8 @@ export default function ContentPage() {
   const [generatedData, setGeneratedData] = useState<GeneratedData | null>(null)
   const [currentVariation, setCurrentVariation] = useState<1 | 2 | 3>(1)
   const [showPageSelector, setShowPageSelector] = useState(false)
+  const [pdfWidth, setPdfWidth] = useState(480)
+  const [isDragging, setIsDragging] = useState(false)
 
   useEffect(() => {
     const u = getStoredUser()
@@ -380,18 +381,43 @@ export default function ContentPage() {
     ? tree.find(n => n.chapter.chapter_number === selectedPage.chapter_number)?.chapter
     : null
 
+  const handleDragStart = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+
+    const startX = e.clientX
+    const startWidth = pdfWidth
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const diff = startX - e.clientX
+      const newWidth = Math.min(Math.max(startWidth + diff, 300), 900)
+      setPdfWidth(newWidth)
+    }
+
+    const handleMouseUp = () => {
+      setIsDragging(false)
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }
+
   const labelCls = 'block text-xs font-semibold mb-1'
   const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all'
   const textareaCls = `${inputCls} resize-none`
 
   return (
     <>
-    <PanelGroup
-      orientation="horizontal"
-      style={{ height: 'calc(100vh - 48px)' }}
-    >
-      {/* PANE 1 — Center workspace */}
-      <Panel defaultSize={55} minSize={40}>
+    <div style={{
+      display: 'flex',
+      height: '100vh',
+      overflow: 'hidden',
+      userSelect: isDragging ? 'none' : 'auto',
+    }}>
+      {/* Center pane */}
+      <div style={{ flex: 1, overflow: 'auto', minWidth: 400 }}>
       <div className="flex h-full flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
 
         {/* Breadcrumb bar */}
@@ -801,45 +827,56 @@ export default function ContentPage() {
           </>
         )}
       </div>
-      </Panel>
+      </div>
 
-      <PanelResizeHandle className="resize-handle">
-        <div style={{
-          width: 8,
-          height: '100%',
-          background: '#e5e7eb',
+      {/* Drag handle */}
+      <div
+        onMouseDown={handleDragStart}
+        style={{
+          width: 6,
+          background: isDragging ? '#E67E22' : '#e5e7eb',
           cursor: 'col-resize',
+          flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           transition: 'background 0.2s',
-        }}>
-          <div style={{
-            width: 3,
-            height: 48,
-            background: '#9ca3af',
-            borderRadius: 4,
-          }} />
-        </div>
-      </PanelResizeHandle>
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = '#E67E22' }}
+        onMouseLeave={e => { if (!isDragging) e.currentTarget.style.background = '#e5e7eb' }}
+      >
+        <div style={{
+          width: 2,
+          height: 40,
+          background: '#9ca3af',
+          borderRadius: 2,
+        }} />
+      </div>
 
-      {/* PANE 2 — PDF Viewer */}
-      <Panel defaultSize={45} minSize={30} maxSize={60}>
-        <div className="flex flex-col h-full border-l border-gray-200" style={{ background: '#f5f5f5' }}>
-          {selectedPage ? (
-            <div style={{ height: '100%' }}>
-              <PDFViewer bookPage={selectedPage.book_page} />
-            </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center h-full">
-              <p className="text-sm text-center px-4" style={{ color: '#aaa' }}>
-                Select a page to see PDF
-              </p>
-            </div>
-          )}
-        </div>
-      </Panel>
-    </PanelGroup>
+      {/* PDF pane */}
+      <div style={{
+        width: pdfWidth,
+        flexShrink: 0,
+        overflow: 'auto',
+        borderLeft: '1px solid #e5e7eb',
+        background: '#f9fafb',
+      }}>
+        {selectedPage ? (
+          <PDFViewer bookPage={selectedPage.book_page} />
+        ) : (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100%',
+            color: '#9ca3af',
+            fontSize: 14,
+          }}>
+            Select a page to see PDF
+          </div>
+        )}
+      </div>
+    </div>
 
       {/* ── Modals (fixed-position, outside panel layout) ── */}
       {/* ── Add Page Modal ── */}
