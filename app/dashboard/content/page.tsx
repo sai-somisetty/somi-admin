@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
 import type { AuthUser, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
