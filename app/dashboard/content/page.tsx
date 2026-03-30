@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
 import type { AuthUser, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
@@ -386,7 +386,7 @@ export default function ContentPage() {
 
   return (
     <>
-    <PanelGroup direction="horizontal" style={{ height: '100%' }}>
+    <PanelGroup orientation="horizontal" style={{ height: '100%' }}>
       {/* PANE 1 — Center workspace */}
       <Panel defaultSize={60} minSize={30}>
       <div className="flex h-full flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
