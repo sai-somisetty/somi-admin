@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
 import type { AuthUser, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
@@ -384,9 +385,11 @@ export default function ContentPage() {
   const textareaCls = `${inputCls} resize-none`
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <>
+    <PanelGroup direction="horizontal" style={{ height: '100%' }}>
       {/* PANE 1 — Center workspace */}
-      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
+      <Panel defaultSize={60} minSize={30}>
+      <div className="flex h-full flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
 
         {/* Breadcrumb bar */}
         <div className="px-5 py-2.5 border-b border-gray-200 bg-white shrink-0 flex items-center justify-between gap-4">
@@ -795,25 +798,44 @@ export default function ContentPage() {
           </>
         )}
       </div>
+      </Panel>
+
+      <PanelResizeHandle style={{
+        width: 6,
+        background: '#e5e7eb',
+        cursor: 'col-resize',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}>
+        <div style={{
+          width: 2,
+          height: 40,
+          background: '#9ca3af',
+          borderRadius: 2,
+        }} />
+      </PanelResizeHandle>
 
       {/* PANE 2 — PDF Viewer */}
-      <aside
-        className="shrink-0 flex flex-col border-l border-gray-200"
-        style={{ width: 420, background: '#f5f5f5' }}
-      >
-        {selectedPage ? (
-          <div style={{ height: '100%' }}>
-            <PDFViewer bookPage={selectedPage.book_page} />
-          </div>
-        ) : (
-          <div className="flex-1 flex items-center justify-center h-full">
-            <p className="text-sm text-center px-4" style={{ color: '#aaa' }}>
-              Select a page to see PDF
-            </p>
-          </div>
-        )}
-      </aside>
+      <Panel defaultSize={40} minSize={20} maxSize={70}>
+        <div className="flex flex-col h-full border-l border-gray-200" style={{ background: '#f5f5f5' }}>
+          {selectedPage ? (
+            <div style={{ height: '100%' }}>
+              <PDFViewer bookPage={selectedPage.book_page} />
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center h-full">
+              <p className="text-sm text-center px-4" style={{ color: '#aaa' }}>
+                Select a page to see PDF
+              </p>
+            </div>
+          )}
+        </div>
+      </Panel>
+    </PanelGroup>
 
+      {/* ── Modals (fixed-position, outside panel layout) ── */}
       {/* ── Add Page Modal ── */}
       {addPageTarget && (
         <div
@@ -1042,7 +1064,7 @@ export default function ContentPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
 
