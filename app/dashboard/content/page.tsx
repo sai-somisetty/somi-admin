@@ -387,8 +387,8 @@ export default function ContentPage() {
   return (
     <>
     <PanelGroup
-      direction="horizontal"
-      style={{ height: 'calc(100vh - 48px)', display: 'flex' }}
+      orientation="horizontal"
+      style={{ height: 'calc(100vh - 48px)' }}
     >
       {/* PANE 1 — Center workspace */}
       <Panel defaultSize={55} minSize={40}>
