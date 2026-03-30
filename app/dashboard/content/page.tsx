@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
 import type { AuthUser, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
@@ -386,9 +386,12 @@ export default function ContentPage() {
 
   return (
     <>
-    <PanelGroup orientation="horizontal" style={{ height: '100%' }}>
+    <PanelGroup
+      direction="horizontal"
+      style={{ height: 'calc(100vh - 48px)', display: 'flex' }}
+    >
       {/* PANE 1 — Center workspace */}
-      <Panel defaultSize={60} minSize={30}>
+      <Panel defaultSize={55} minSize={40}>
       <div className="flex h-full flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
 
         {/* Breadcrumb bar */}
@@ -800,25 +803,28 @@ export default function ContentPage() {
       </div>
       </Panel>
 
-      <PanelResizeHandle style={{
-        width: 6,
-        background: '#e5e7eb',
-        cursor: 'col-resize',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-      }}>
+      <PanelResizeHandle className="resize-handle">
         <div style={{
-          width: 2,
-          height: 40,
-          background: '#9ca3af',
-          borderRadius: 2,
-        }} />
+          width: 8,
+          height: '100%',
+          background: '#e5e7eb',
+          cursor: 'col-resize',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'background 0.2s',
+        }}>
+          <div style={{
+            width: 3,
+            height: 48,
+            background: '#9ca3af',
+            borderRadius: 4,
+          }} />
+        </div>
       </PanelResizeHandle>
 
       {/* PANE 2 — PDF Viewer */}
-      <Panel defaultSize={40} minSize={20} maxSize={70}>
+      <Panel defaultSize={45} minSize={30} maxSize={60}>
         <div className="flex flex-col h-full border-l border-gray-200" style={{ background: '#f5f5f5' }}>
           {selectedPage ? (
             <div style={{ height: '100%' }}>
