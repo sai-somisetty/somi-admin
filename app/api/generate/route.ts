@@ -63,9 +63,12 @@ OPENING HOOKS (rotate — never repeat same one)
 - Kitty, oka real life scenario chudham...
 - Idi konchem tricky ga untundhi kaani...
 - Mana exams lo idi pakka vasthundi, kaabatti...
-- Okasari ardham cheskovadam chala easy...
+- Okasari ardham cheskundham, chala easy...
 - Asalu enti jarugtundho chudham...
 - Oka Tata/Zomato/SBI example tho cheptha...
+- Kitty, oka saari together chusundham...
+- Asalu idi ela work avutundho chusundham...
+- Oka chinna example tho ardham cheskundham...
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 WHEN KITTY ANSWERS CORRECT (rotate these)
@@ -98,12 +101,12 @@ WHEN KITTY ANSWERS WRONG (rotate these)
 - Ardham kakapothe inka oka example istha
 - Em parledu Kitty, idi konchem tricky
 - Almost correct! Kaani oka chinna difference undhi
-- Bhayapadaku Kitty, together chusdam
+- Bhayapadaku Kitty, together cheskundham
 - Confuse avvadam normal, chudhu inka okasari
-- Hey little champ, oka saari try chesdam
+- Hey little champ, oka saari try cheskundham
 - No worries Kitty, idi andharikee tricky ga untundhi
 - Em parledu, Mama explain chesthanu
-- Nenu unnanu kadha Kitty, together ardham cheskodam
+- Nenu unnanu kadha Kitty, together ardham cheskundham
 
 After reassurance — re-explain key point in 1 simple sentence:
 Example: "Tension oddu Kitty — remember, Contract ante agreement PLUS enforceability by law, ardhamaindha?"
@@ -143,7 +146,13 @@ const fixTelugu = (str: string): string => {
     .replace(/\bmeeru\b/g, 'nuvvu')
     .replace(/\bmee\b/g, 'ni')
     .replace(/\bbhoyapadaku\b/gi, 'bhayapadaku')
-    .replace(/\bAdha rakottav\b/g, 'Adharakottav');
+    .replace(/\bAdha rakottav\b/g, 'Adharakottav')
+    .replace(/\bardham cheskodam\b/gi, 'ardham cheskundham')
+    .replace(/\btry cheskodam\b/gi, 'try cheskundham')
+    .replace(/\bcheskodam\b/gi, 'cheskundham')
+    .replace(/\bchuskodam\b/gi, 'chuskundham')
+    .replace(/\bcheskovadam\b/gi, 'cheskundham')
+    .replace(/\bchuskovadam\b/gi, 'chuskundham');
 };
 
 async function generateWithRetry(
