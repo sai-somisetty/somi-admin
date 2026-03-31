@@ -22,29 +22,16 @@ function StatusBadge({ concept }: { concept: Concept }) {
   return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-medium">Pending</span>
 }
 
-// ─── Collapsible Section ──────────────────────────────────────────────────────
-function CollapsibleSection({
-  title,
-  defaultOpen = false,
-  children,
-}: {
-  title: string
-  defaultOpen?: boolean
-  children: React.ReactNode
-}) {
-  const [open, setOpen] = useState(defaultOpen)
+// ─── Section Block (always expanded) ─────────────────────────────────────────
+function SectionBlock({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-gray-200 overflow-hidden">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
-      >
+      <div className="px-3 py-2 bg-gray-50 border-b border-gray-200">
         <span className="text-xs font-bold tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
           {title}
         </span>
-        <span className="text-gray-400 text-xs ml-2">{open ? '▲' : '▼'}</span>
-      </button>
-      {open && <div className="p-3 bg-white">{children}</div>}
+      </div>
+      <div className="p-3 bg-white">{children}</div>
     </div>
   )
 }
@@ -60,6 +47,8 @@ function ConceptCard({
   onRejectConfirm,
   actionLoading,
   onReloadConcepts,
+  pdfOpen,
+  setPdfOpen,
 }: {
   concept: ConceptRow
   isExpanded: boolean
@@ -70,6 +59,8 @@ function ConceptCard({
   onRejectConfirm: (note: string) => void
   actionLoading: boolean
   onReloadConcepts: () => void
+  pdfOpen: boolean
+  setPdfOpen: (v: boolean) => void
 }) {
   const [activeVariation, setActiveVariation] = useState<1 | 2 | 3>(1)
   const [rejectOpen, setRejectOpen] = useState(false)
@@ -201,13 +192,11 @@ function ConceptCard({
             </div>
           ) : (
             <div className="flex" style={{ minHeight: 580 }}>
-              {/* ── Left Column 60% ── */}
-              <div
-                className="overflow-y-auto p-4 space-y-2.5"
-                style={{ flex: '0 0 60%', borderRight: '1px solid #f3f4f6' }}
-              >
+              {/* ── Middle Content — flex-1 ── */}
+              <div className="overflow-y-auto p-4 space-y-2.5 flex-1">
+
                 {/* 1. ICMAI TEXT */}
-                <CollapsibleSection title="ICMAI Text">
+                <SectionBlock title="ICMAI Text">
                   <textarea
                     readOnly
                     className="w-full text-sm leading-relaxed resize-none border-0 outline-none"
@@ -215,10 +204,10 @@ function ConceptCard({
                     rows={8}
                     value={concept.text}
                   />
-                </CollapsibleSection>
+                </SectionBlock>
 
-                {/* 2. MAMA'S TENGLISH */}
-                <CollapsibleSection title="Mama's Tenglish" defaultOpen>
+                {/* 2. MAMA'S TENGLISH — V1/V2/V3 tabs */}
+                <SectionBlock title="Mama's Tenglish">
                   <div className="flex gap-1 mb-3">
                     {([1, 2, 3] as const).map(v => (
                       <button
@@ -241,11 +230,11 @@ function ConceptCard({
                     rows={8}
                     value={activeText || '—'}
                   />
-                </CollapsibleSection>
+                </SectionBlock>
 
                 {/* 3. KITTY INTERACTION */}
                 {concept.is_key_concept && (concept.kitty_question || concept.mama_kitty_answer) && (
-                  <CollapsibleSection title="Kitty Interaction">
+                  <SectionBlock title="Kitty Interaction">
                     {concept.kitty_question && (
                       <div className="mb-3">
                         <p className="text-xs font-bold mb-1" style={{ color: 'var(--muted)' }}>Kitty's Question</p>
@@ -258,12 +247,12 @@ function ConceptCard({
                         <p className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>{concept.mama_kitty_answer}</p>
                       </div>
                     )}
-                  </CollapsibleSection>
+                  </SectionBlock>
                 )}
 
                 {/* 4. CHECK QUESTION */}
                 {concept.check_question && (
-                  <CollapsibleSection title="Check Question">
+                  <SectionBlock title="Check Question">
                     <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>
                       {concept.check_question}
                     </p>
@@ -303,12 +292,12 @@ function ConceptCard({
                         <p className="text-sm" style={{ color: '#1e40af' }}>{concept.check_explanation}</p>
                       </div>
                     )}
-                  </CollapsibleSection>
+                  </SectionBlock>
                 )}
 
                 {/* 5. MAMA RESPONSES */}
                 {(concept.mama_response_correct || concept.mama_response_wrong) && (
-                  <CollapsibleSection title="Mama Responses">
+                  <SectionBlock title="Mama Responses">
                     <div className="grid grid-cols-2 gap-3">
                       {concept.mama_response_correct && (
                         <div className="rounded-lg p-3" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
@@ -323,7 +312,7 @@ function ConceptCard({
                         </div>
                       )}
                     </div>
-                  </CollapsibleSection>
+                  </SectionBlock>
                 )}
 
                 {/* Previous rejection note */}
@@ -372,9 +361,70 @@ function ConceptCard({
                 )}
               </div>
 
-              {/* ── Right Column 40% — PDF Viewer ── */}
-              <div style={{ flex: '0 0 40%', overflow: 'hidden' }}>
-                <PDFViewer bookPage={concept.book_page} pdfUrl={pdfUrl} />
+              {/* ── PDF Pane — independently collapsible ── */}
+              <div
+                style={{
+                  width: pdfOpen ? 420 : 32,
+                  transition: 'width 0.3s ease',
+                  overflow: 'hidden',
+                  flexShrink: 0,
+                  borderLeft: '1px solid #e5e7eb',
+                }}
+              >
+                {!pdfOpen ? (
+                  <div
+                    style={{
+                      width: 32,
+                      height: '100%',
+                      background: '#f5f5f5',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      paddingTop: 16,
+                      gap: 8,
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => setPdfOpen(true)}
+                  >
+                    <span style={{ fontSize: 18 }}>📄</span>
+                    <span style={{
+                      writingMode: 'vertical-rl',
+                      fontSize: 11,
+                      color: '#9ca3af',
+                      transform: 'rotate(180deg)',
+                    }}>Open PDF</span>
+                    <span style={{ color: '#9ca3af' }}>▶</span>
+                  </div>
+                ) : (
+                  <div style={{ width: 420, display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    <div style={{
+                      padding: '8px 12px',
+                      borderBottom: '1px solid #e5e7eb',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}>
+                      <button
+                        onClick={() => setPdfOpen(false)}
+                        style={{
+                          fontSize: 12,
+                          color: '#6b7280',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                        }}
+                      >
+                        ◀ Close PDF
+                      </button>
+                    </div>
+                    <div style={{ flex: 1, overflow: 'hidden' }}>
+                      <PDFViewer bookPage={concept.book_page} pdfUrl={pdfUrl} />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -393,6 +443,7 @@ export default function ReviewPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [paperUrls, setPaperUrls] = useState<Record<string, string>>({})
+  const [pdfOpen, setPdfOpen] = useState(false)
 
   useEffect(() => {
     setUser(getStoredUser())
@@ -546,6 +597,8 @@ export default function ReviewPage() {
                 onRejectConfirm={note => reject(concept, note)}
                 actionLoading={actionLoading}
                 onReloadConcepts={loadConcepts}
+                pdfOpen={pdfOpen}
+                setPdfOpen={setPdfOpen}
               />
             ))}
           </div>
