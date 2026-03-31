@@ -1,30 +1,401 @@
 'use client'
 import { useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
-import { AuthUser, Concept } from '@/lib/types'
+import type { AuthUser, Concept } from '@/lib/types'
+
+const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false })
 
 type Filter = 'all' | 'pending' | 'approved' | 'rejected'
 
-interface ConceptWithCreator extends Concept {
+interface ConceptRow extends Concept {
   creator_name: string | null
 }
 
+// ─── Status Badge ─────────────────────────────────────────────────────────────
+function StatusBadge({ concept }: { concept: Concept }) {
+  if (concept.is_verified)
+    return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Approved</span>
+  if (concept.needs_work)
+    return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">Rejected</span>
+  return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-medium">Pending</span>
+}
+
+// ─── Collapsible Section ──────────────────────────────────────────────────────
+function CollapsibleSection({
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  title: string
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="rounded-lg border border-gray-200 overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+      >
+        <span className="text-xs font-bold tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
+          {title}
+        </span>
+        <span className="text-gray-400 text-xs ml-2">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && <div className="p-3 bg-white">{children}</div>}
+    </div>
+  )
+}
+
+// ─── Concept Card ─────────────────────────────────────────────────────────────
+function ConceptCard({
+  concept,
+  isExpanded,
+  pdfUrl,
+  user,
+  onToggle,
+  onApprove,
+  onRejectConfirm,
+  actionLoading,
+  onReloadConcepts,
+}: {
+  concept: ConceptRow
+  isExpanded: boolean
+  pdfUrl: string | undefined
+  user: AuthUser | null
+  onToggle: () => void
+  onApprove: () => void
+  onRejectConfirm: (note: string) => void
+  actionLoading: boolean
+  onReloadConcepts: () => void
+}) {
+  const [activeVariation, setActiveVariation] = useState<1 | 2 | 3>(1)
+  const [rejectOpen, setRejectOpen] = useState(false)
+  const [rejectionNote, setRejectionNote] = useState('')
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState<Partial<Concept>>({})
+  const [editLoading, setEditLoading] = useState(false)
+
+  const opts = concept.check_options as string[] | null
+  const tenglishV1 = concept.tenglish || ''
+  const tenglishV2 = concept.tenglish_variation_2 || ''
+  const tenglishV3 = concept.tenglish_variation_3 || ''
+  const activeText = activeVariation === 1 ? tenglishV1 : activeVariation === 2 ? tenglishV2 : tenglishV3
+
+  function startEdit() {
+    setEditForm({
+      concept_title: concept.concept_title || '',
+      text: concept.text,
+      tenglish: concept.tenglish || '',
+      check_question: concept.check_question || '',
+      check_options: opts ? [...opts] : ['', '', '', ''],
+      check_answer: concept.check_answer ?? 0,
+      check_explanation: concept.check_explanation || '',
+    })
+    setIsEditing(true)
+  }
+
+  async function saveEdit() {
+    if (!user) return
+    setEditLoading(true)
+    await supabase
+      .from('concepts')
+      .update({ ...editForm, updated_at: new Date().toISOString() })
+      .eq('id', concept.id)
+    await supabase.from('review_logs').insert({
+      concept_id: concept.id,
+      reviewed_by: user.id,
+      action: 'edited',
+    })
+    setIsEditing(false)
+    setEditForm({})
+    setEditLoading(false)
+    onReloadConcepts()
+  }
+
+  function handleRejectClick(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!isExpanded) onToggle()
+    setRejectOpen(true)
+  }
+
+  function handleEditClick(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!isExpanded) onToggle()
+    startEdit()
+  }
+
+  return (
+    <div className="rounded-xl shadow-sm overflow-hidden" style={{ background: 'var(--surface)' }}>
+      {/* ── Card Header ── */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+        onClick={onToggle}
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span
+              className="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0"
+              style={{ background: 'var(--primary)', color: 'white' }}
+            >
+              Ch {concept.chapter_number} › {concept.sub_chapter_id} › Page {concept.book_page}
+            </span>
+            <StatusBadge concept={concept} />
+          </div>
+          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
+            {concept.concept_title || 'Untitled concept'}
+          </p>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+            {concept.creator_name ? `${concept.creator_name} · ` : ''}
+            {new Date(concept.created_at).toLocaleDateString()}
+          </p>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+          {!concept.is_verified && (
+            <button
+              onClick={e => { e.stopPropagation(); onApprove() }}
+              disabled={actionLoading}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 cursor-pointer whitespace-nowrap"
+              style={{ background: '#16a34a' }}
+            >
+              ✅ Approve
+            </button>
+          )}
+          {!concept.needs_work && (
+            <button
+              onClick={handleRejectClick}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white cursor-pointer whitespace-nowrap"
+              style={{ background: '#dc2626' }}
+            >
+              ❌ Reject
+            </button>
+          )}
+          <button
+            onClick={handleEditClick}
+            className="rounded-lg px-3 py-1.5 text-xs font-medium border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer whitespace-nowrap"
+            style={{ color: 'var(--text)' }}
+          >
+            ✏️ Edit
+          </button>
+        </div>
+        <span className="text-gray-400 text-xs shrink-0">{isExpanded ? '▲' : '▼'}</span>
+      </div>
+
+      {/* ── Expanded Body ── */}
+      {isExpanded && (
+        <div className="border-t border-gray-100">
+          {isEditing ? (
+            <div className="p-4">
+              <EditForm
+                concept={concept}
+                editForm={editForm}
+                setEditForm={setEditForm}
+                onSave={saveEdit}
+                onCancel={() => { setIsEditing(false); setEditForm({}) }}
+                loading={editLoading}
+              />
+            </div>
+          ) : (
+            <div className="flex" style={{ minHeight: 580 }}>
+              {/* ── Left Column 60% ── */}
+              <div
+                className="overflow-y-auto p-4 space-y-2.5"
+                style={{ flex: '0 0 60%', borderRight: '1px solid #f3f4f6' }}
+              >
+                {/* 1. ICMAI TEXT */}
+                <CollapsibleSection title="ICMAI Text">
+                  <textarea
+                    readOnly
+                    className="w-full text-sm leading-relaxed resize-none border-0 outline-none"
+                    style={{ color: 'var(--text)', background: 'transparent', fontFamily: 'inherit' }}
+                    rows={8}
+                    value={concept.text}
+                  />
+                </CollapsibleSection>
+
+                {/* 2. MAMA'S TENGLISH */}
+                <CollapsibleSection title="Mama's Tenglish" defaultOpen>
+                  <div className="flex gap-1 mb-3">
+                    {([1, 2, 3] as const).map(v => (
+                      <button
+                        key={v}
+                        onClick={() => setActiveVariation(v)}
+                        className="px-3 py-1 rounded text-xs font-bold cursor-pointer transition-all"
+                        style={{
+                          background: activeVariation === v ? 'var(--accent)' : '#f3f4f6',
+                          color: activeVariation === v ? 'white' : 'var(--muted)',
+                        }}
+                      >
+                        V{v}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    readOnly
+                    className="w-full text-sm leading-relaxed resize-none border-0 outline-none"
+                    style={{ color: 'var(--text)', background: 'transparent', fontFamily: 'inherit' }}
+                    rows={8}
+                    value={activeText || '—'}
+                  />
+                </CollapsibleSection>
+
+                {/* 3. KITTY INTERACTION */}
+                {concept.is_key_concept && (concept.kitty_question || concept.mama_kitty_answer) && (
+                  <CollapsibleSection title="Kitty Interaction">
+                    {concept.kitty_question && (
+                      <div className="mb-3">
+                        <p className="text-xs font-bold mb-1" style={{ color: 'var(--muted)' }}>Kitty's Question</p>
+                        <p className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>{concept.kitty_question}</p>
+                      </div>
+                    )}
+                    {concept.mama_kitty_answer && (
+                      <div>
+                        <p className="text-xs font-bold mb-1" style={{ color: 'var(--muted)' }}>Mama's Answer</p>
+                        <p className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>{concept.mama_kitty_answer}</p>
+                      </div>
+                    )}
+                  </CollapsibleSection>
+                )}
+
+                {/* 4. CHECK QUESTION */}
+                {concept.check_question && (
+                  <CollapsibleSection title="Check Question">
+                    <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>
+                      {concept.check_question}
+                    </p>
+                    {opts && (
+                      <div className="space-y-2 mb-3">
+                        {opts.map((opt, i) => (
+                          <div
+                            key={i}
+                            className="flex items-start gap-2.5 rounded-lg px-3 py-2"
+                            style={{
+                              background: concept.check_answer === i ? '#f0fdf4' : '#f9fafb',
+                              border: `1px solid ${concept.check_answer === i ? '#bbf7d0' : '#e5e7eb'}`,
+                            }}
+                          >
+                            <span
+                              className="text-xs font-bold shrink-0 mt-0.5 w-4"
+                              style={{ color: concept.check_answer === i ? '#16a34a' : '#9ca3af' }}
+                            >
+                              {['A', 'B', 'C', 'D'][i]}
+                            </span>
+                            <span
+                              className="text-sm"
+                              style={{
+                                color: concept.check_answer === i ? '#15803d' : 'var(--text)',
+                                fontWeight: concept.check_answer === i ? 600 : 400,
+                              }}
+                            >
+                              {opt}{concept.check_answer === i && ' ✓'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {concept.check_explanation && (
+                      <div className="rounded-lg p-3" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                        <p className="text-xs font-bold mb-1" style={{ color: '#2563eb' }}>Explanation</p>
+                        <p className="text-sm" style={{ color: '#1e40af' }}>{concept.check_explanation}</p>
+                      </div>
+                    )}
+                  </CollapsibleSection>
+                )}
+
+                {/* 5. MAMA RESPONSES */}
+                {(concept.mama_response_correct || concept.mama_response_wrong) && (
+                  <CollapsibleSection title="Mama Responses">
+                    <div className="grid grid-cols-2 gap-3">
+                      {concept.mama_response_correct && (
+                        <div className="rounded-lg p-3" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                          <p className="text-xs font-bold mb-1.5" style={{ color: '#16a34a' }}>✅ Correct</p>
+                          <p className="text-sm" style={{ color: '#14532d' }}>{concept.mama_response_correct}</p>
+                        </div>
+                      )}
+                      {concept.mama_response_wrong && (
+                        <div className="rounded-lg p-3" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
+                          <p className="text-xs font-bold mb-1.5" style={{ color: '#dc2626' }}>❌ Wrong</p>
+                          <p className="text-sm" style={{ color: '#7f1d1d' }}>{concept.mama_response_wrong}</p>
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleSection>
+                )}
+
+                {/* Previous rejection note */}
+                {concept.needs_work && concept.rejection_note && (
+                  <div className="rounded-lg p-3" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
+                    <p className="text-xs font-bold mb-1" style={{ color: '#dc2626' }}>Previous Rejection Note</p>
+                    <p className="text-sm" style={{ color: '#7f1d1d' }}>{concept.rejection_note}</p>
+                  </div>
+                )}
+
+                {/* Inline reject form */}
+                {rejectOpen && (
+                  <div className="rounded-lg p-3 space-y-2" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
+                    <p className="text-xs font-bold" style={{ color: '#dc2626' }}>Rejection Reason</p>
+                    <textarea
+                      className="w-full border border-red-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-red-400 resize-none"
+                      style={{ background: 'white' }}
+                      rows={3}
+                      value={rejectionNote}
+                      onChange={e => setRejectionNote(e.target.value)}
+                      placeholder="Explain what needs to be fixed..."
+                      autoFocus
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          onRejectConfirm(rejectionNote)
+                          setRejectOpen(false)
+                          setRejectionNote('')
+                        }}
+                        disabled={actionLoading || !rejectionNote.trim()}
+                        className="rounded-lg px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50 cursor-pointer"
+                        style={{ background: '#dc2626' }}
+                      >
+                        Confirm Reject
+                      </button>
+                      <button
+                        onClick={() => { setRejectOpen(false); setRejectionNote('') }}
+                        className="rounded-lg px-4 py-1.5 text-xs border border-gray-200 hover:bg-gray-50 cursor-pointer"
+                        style={{ color: 'var(--text)' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Right Column 40% — PDF Viewer ── */}
+              <div style={{ flex: '0 0 40%', overflow: 'hidden' }}>
+                <PDFViewer bookPage={concept.book_page} pdfUrl={pdfUrl} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ReviewPage() {
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [concepts, setConcepts] = useState<ConceptWithCreator[]>([])
+  const [concepts, setConcepts] = useState<ConceptRow[]>([])
   const [filter, setFilter] = useState<Filter>('pending')
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState<Partial<Concept>>({})
-  const [rejectionNote, setRejectionNote] = useState('')
-  const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
+  const [paperUrls, setPaperUrls] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    const u = getStoredUser()
-    setUser(u)
+    setUser(getStoredUser())
     loadConcepts()
   }, [])
 
@@ -37,24 +408,64 @@ export default function ReviewPage() {
 
     if (!conceptData) { setLoading(false); return }
 
+    // Creator names
     const creatorIds = [...new Set(conceptData.map(c => c.created_by).filter(Boolean))]
     let creatorMap: Record<string, string> = {}
-    if (creatorIds.length > 0) {
-      const { data: users } = await supabase
-        .from('admin_users')
-        .select('id, name')
-        .in('id', creatorIds)
-      if (users) {
-        creatorMap = Object.fromEntries(users.map(u => [u.id, u.name]))
+    if (creatorIds.length) {
+      const { data: users } = await supabase.from('admin_users').select('id, name').in('id', creatorIds)
+      if (users) creatorMap = Object.fromEntries(users.map(u => [u.id, u.name]))
+    }
+
+    // Paper PDF URLs (course_id + paper_number → pdf_url)
+    const courseIds = [...new Set(conceptData.map(c => c.course_id).filter(Boolean))]
+    if (courseIds.length) {
+      const { data: papers } = await supabase
+        .from('papers')
+        .select('course_id, paper_number, pdf_url')
+        .in('course_id', courseIds)
+      if (papers) {
+        const urlMap: Record<string, string> = {}
+        for (const p of papers) {
+          if (p.pdf_url) urlMap[`${p.course_id}|${p.paper_number}`] = p.pdf_url
+        }
+        setPaperUrls(urlMap)
       }
     }
 
-    const enriched: ConceptWithCreator[] = conceptData.map(c => ({
+    setConcepts(conceptData.map(c => ({
       ...c,
       creator_name: c.created_by ? creatorMap[c.created_by] || null : null,
-    }))
-    setConcepts(enriched)
+    })))
     setLoading(false)
+  }
+
+  async function approve(concept: ConceptRow) {
+    if (!user) return
+    setActionLoading(true)
+    await supabase.from('concepts').update({
+      is_verified: true,
+      needs_work: false,
+      verified_by: user.id,
+      verified_at: new Date().toISOString(),
+    }).eq('id', concept.id)
+    await supabase.from('review_logs').insert({ concept_id: concept.id, reviewed_by: user.id, action: 'approved' })
+    setExpanded(null)
+    await loadConcepts()
+    setActionLoading(false)
+  }
+
+  async function reject(concept: ConceptRow, note: string) {
+    if (!user || !note.trim()) { alert('Please enter a rejection note'); return }
+    setActionLoading(true)
+    await supabase.from('concepts').update({
+      needs_work: true,
+      is_verified: false,
+      rejection_note: note,
+    }).eq('id', concept.id)
+    await supabase.from('review_logs').insert({ concept_id: concept.id, reviewed_by: user.id, action: 'rejected', note })
+    setExpanded(null)
+    await loadConcepts()
+    setActionLoading(false)
   }
 
   const filtered = concepts.filter(c => {
@@ -64,65 +475,7 @@ export default function ReviewPage() {
     return true
   })
 
-  async function approve(concept: ConceptWithCreator) {
-    if (!user) return
-    setActionLoading(true)
-    await supabase
-      .from('concepts')
-      .update({ is_verified: true, needs_work: false, verified_by: user.id, verified_at: new Date().toISOString() })
-      .eq('id', concept.id)
-    await supabase.from('review_logs').insert({
-      concept_id: concept.id,
-      reviewed_by: user.id,
-      action: 'approved',
-    })
-    setExpanded(null)
-    loadConcepts()
-    setActionLoading(false)
-  }
-
-  async function reject(concept: ConceptWithCreator) {
-    if (!user || !rejectionNote.trim()) {
-      alert('Please enter a rejection note')
-      return
-    }
-    setActionLoading(true)
-    await supabase
-      .from('concepts')
-      .update({ needs_work: true, is_verified: false, rejection_note: rejectionNote })
-      .eq('id', concept.id)
-    await supabase.from('review_logs').insert({
-      concept_id: concept.id,
-      reviewed_by: user.id,
-      action: 'rejected',
-      note: rejectionNote,
-    })
-    setRejectingId(null)
-    setRejectionNote('')
-    setExpanded(null)
-    loadConcepts()
-    setActionLoading(false)
-  }
-
-  async function saveEdit(concept: ConceptWithCreator) {
-    if (!user) return
-    setActionLoading(true)
-    await supabase
-      .from('concepts')
-      .update({ ...editForm, updated_at: new Date().toISOString() })
-      .eq('id', concept.id)
-    await supabase.from('review_logs').insert({
-      concept_id: concept.id,
-      reviewed_by: user.id,
-      action: 'edited',
-    })
-    setEditingId(null)
-    setEditForm({})
-    loadConcepts()
-    setActionLoading(false)
-  }
-
-  const filterCounts = {
+  const counts = {
     all: concepts.length,
     pending: concepts.filter(c => !c.is_verified && !c.needs_work).length,
     approved: concepts.filter(c => c.is_verified).length,
@@ -131,11 +484,9 @@ export default function ReviewPage() {
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-full mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>
-            Review Queue
-          </h1>
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>Review Queue</h1>
           <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
             Review and approve intern-submitted concepts
           </p>
@@ -154,15 +505,15 @@ export default function ReviewPage() {
                 border: filter === f ? 'none' : '1px solid #e5e7eb',
               }}
             >
-              {f.charAt(0).toUpperCase() + f.slice(1)}{' '}
+              {f.charAt(0).toUpperCase() + f.slice(1)}
               <span
-                className="ml-1 text-xs px-1.5 py-0.5 rounded-full"
+                className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full"
                 style={{
                   background: filter === f ? 'rgba(255,255,255,0.25)' : '#f0f0ec',
                   color: filter === f ? 'white' : 'var(--muted)',
                 }}
               >
-                {filterCounts[f]}
+                {counts[f]}
               </span>
             </button>
           ))}
@@ -183,183 +534,20 @@ export default function ReviewPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filtered.map(concept => {
-              const isExpanded = expanded === concept.id
-              const isEditing = editingId === concept.id
-              const isRejecting = rejectingId === concept.id
-              const opts = concept.check_options as string[] | null
-
-              return (
-                <div
-                  key={concept.id}
-                  className="rounded-xl shadow-sm overflow-hidden"
-                  style={{ background: 'var(--surface)' }}
-                >
-                  {/* Card header */}
-                  <div
-                    className="flex items-start gap-4 p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                    onClick={() => setExpanded(isExpanded ? null : concept.id)}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span
-                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                          style={{ background: 'var(--primary)', color: 'white' }}
-                        >
-                          Ch {concept.chapter_number} › {concept.sub_chapter_id} › P{concept.book_page}
-                        </span>
-                        <ConceptStatusBadge concept={concept} />
-                      </div>
-                      <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-                        {concept.concept_title || 'Untitled concept'}
-                      </p>
-                      <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--muted)' }}>
-                        {concept.text.slice(0, 100)}{concept.text.length > 100 ? '...' : ''}
-                      </p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      {concept.creator_name && (
-                        <p className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
-                          {concept.creator_name}
-                        </p>
-                      )}
-                      <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                        {new Date(concept.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <span className="text-gray-400 text-xs shrink-0 mt-1">
-                      {isExpanded ? '▲' : '▼'}
-                    </span>
-                  </div>
-
-                  {/* Expanded detail */}
-                  {isExpanded && (
-                    <div className="px-4 pb-4 border-t border-gray-100">
-                      {isEditing ? (
-                        <EditForm
-                          concept={concept}
-                          editForm={editForm}
-                          setEditForm={setEditForm}
-                          onSave={() => saveEdit(concept)}
-                          onCancel={() => { setEditingId(null); setEditForm({}) }}
-                          loading={actionLoading}
-                        />
-                      ) : (
-                        <>
-                          <div className="grid grid-cols-2 gap-4 mt-4">
-                            <Field label="ICMAI Text" value={concept.text} multiline />
-                            <Field label="Tenglish" value={concept.tenglish} multiline />
-                            {concept.check_question && (
-                              <Field label="Check Question" value={concept.check_question} multiline />
-                            )}
-                            {opts && (
-                              <div>
-                                <p className="text-xs font-semibold mb-1" style={{ color: 'var(--muted)' }}>Options</p>
-                                <div className="space-y-1">
-                                  {opts.map((opt, i) => (
-                                    <p
-                                      key={i}
-                                      className="text-sm"
-                                      style={{
-                                        color: concept.check_answer === i ? '#16a34a' : 'var(--text)',
-                                        fontWeight: concept.check_answer === i ? 600 : 400,
-                                      }}
-                                    >
-                                      {['A', 'B', 'C', 'D'][i]}. {opt}
-                                      {concept.check_answer === i && ' ✓'}
-                                    </p>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {concept.is_key_concept && concept.kitty_question && (
-                              <Field label="Kitty's Question" value={concept.kitty_question} multiline />
-                            )}
-                            {concept.needs_work && concept.rejection_note && (
-                              <div className="col-span-2">
-                                <Field label="Rejection Note" value={concept.rejection_note} multiline />
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Action buttons */}
-                          <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100">
-                            {!concept.is_verified && (
-                              <button
-                                onClick={() => approve(concept)}
-                                disabled={actionLoading}
-                                className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
-                                style={{ background: '#16a34a' }}
-                              >
-                                ✅ Approve
-                              </button>
-                            )}
-                            {!concept.needs_work && (
-                              <button
-                                onClick={() => setRejectingId(isRejecting ? null : concept.id)}
-                                className="rounded-lg px-4 py-2 text-sm font-semibold text-white cursor-pointer"
-                                style={{ background: '#dc2626' }}
-                              >
-                                ❌ Reject
-                              </button>
-                            )}
-                            <button
-                              onClick={() => {
-                                const opts = concept.check_options as string[] | null
-                                setEditForm({
-                                  concept_title: concept.concept_title || '',
-                                  text: concept.text,
-                                  tenglish: concept.tenglish || '',
-                                  check_question: concept.check_question || '',
-                                  check_options: opts,
-                                  check_answer: concept.check_answer,
-                                  check_explanation: concept.check_explanation || '',
-                                })
-                                setEditingId(concept.id)
-                              }}
-                              className="rounded-lg px-4 py-2 text-sm font-medium border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
-                              style={{ color: 'var(--text)' }}
-                            >
-                              ✏️ Edit
-                            </button>
-                          </div>
-
-                          {/* Rejection note input */}
-                          {isRejecting && (
-                            <div className="mt-3 space-y-2">
-                              <textarea
-                                className="w-full border border-red-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-red-400 resize-none"
-                                rows={2}
-                                value={rejectionNote}
-                                onChange={e => setRejectionNote(e.target.value)}
-                                placeholder="Explain what needs to be fixed..."
-                              />
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => reject(concept)}
-                                  disabled={actionLoading || !rejectionNote.trim()}
-                                  className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
-                                  style={{ background: '#dc2626' }}
-                                >
-                                  Confirm Reject
-                                </button>
-                                <button
-                                  onClick={() => { setRejectingId(null); setRejectionNote('') }}
-                                  className="rounded-lg px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50 cursor-pointer"
-                                  style={{ color: 'var(--text)' }}
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+            {filtered.map(concept => (
+              <ConceptCard
+                key={concept.id}
+                concept={concept}
+                isExpanded={expanded === concept.id}
+                pdfUrl={paperUrls[`${concept.course_id}|${concept.paper_number}`]}
+                user={user}
+                onToggle={() => setExpanded(expanded === concept.id ? null : concept.id)}
+                onApprove={() => approve(concept)}
+                onRejectConfirm={note => reject(concept, note)}
+                actionLoading={actionLoading}
+                onReloadConcepts={loadConcepts}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -367,32 +555,7 @@ export default function ReviewPage() {
   )
 }
 
-function Field({ label, value, multiline }: { label: string; value: string | null | undefined; multiline?: boolean }) {
-  if (!value) return null
-  return (
-    <div>
-      <p className="text-xs font-semibold mb-1" style={{ color: 'var(--muted)' }}>{label}</p>
-      {multiline ? (
-        <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text)' }}>
-          {value}
-        </p>
-      ) : (
-        <p className="text-sm" style={{ color: 'var(--text)' }}>{value}</p>
-      )}
-    </div>
-  )
-}
-
-function ConceptStatusBadge({ concept }: { concept: Concept }) {
-  if (concept.is_verified) {
-    return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">verified</span>
-  }
-  if (concept.needs_work) {
-    return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">needs work</span>
-  }
-  return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-medium">pending</span>
-}
-
+// ─── Edit Form ────────────────────────────────────────────────────────────────
 function EditForm({
   concept,
   editForm,
@@ -408,11 +571,35 @@ function EditForm({
   onCancel: () => void
   loading: boolean
 }) {
-  const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all'
-  const opts = editForm.check_options as string[] | null || ['', '', '', '']
+  const inputCls =
+    'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all'
+  const opts = (editForm.check_options as string[]) || ['', '', '', '']
 
   return (
-    <div className="mt-4 space-y-3">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-bold" style={{ color: 'var(--text)' }}>
+          Edit: {concept.concept_title || 'Untitled concept'}
+        </h3>
+        <div className="flex gap-2">
+          <button
+            onClick={onSave}
+            disabled={loading}
+            className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
+            style={{ background: 'var(--accent)' }}
+          >
+            {loading ? 'Saving…' : 'Save Changes'}
+          </button>
+          <button
+            onClick={onCancel}
+            className="rounded-lg px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50 cursor-pointer"
+            style={{ color: 'var(--text)' }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+
       <div>
         <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--muted)' }}>Concept Title</label>
         <input
@@ -431,7 +618,7 @@ function EditForm({
         />
       </div>
       <div>
-        <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--muted)' }}>Tenglish</label>
+        <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--muted)' }}>Tenglish (V1)</label>
         <textarea
           className={`${inputCls} resize-none`}
           rows={4}
@@ -466,22 +653,14 @@ function EditForm({
           </div>
         ))}
       </div>
-      <div className="flex gap-3">
-        <button
-          onClick={onSave}
-          disabled={loading}
-          className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 cursor-pointer"
-          style={{ background: 'var(--accent)' }}
-        >
-          Save Changes
-        </button>
-        <button
-          onClick={onCancel}
-          className="rounded-lg px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50 cursor-pointer"
-          style={{ color: 'var(--text)' }}
-        >
-          Cancel
-        </button>
+      <div>
+        <label className="block text-xs font-semibold mb-1" style={{ color: 'var(--muted)' }}>Explanation</label>
+        <textarea
+          className={`${inputCls} resize-none`}
+          rows={2}
+          value={(editForm.check_explanation as string) || ''}
+          onChange={e => setEditForm(p => ({ ...p, check_explanation: e.target.value }))}
+        />
       </div>
     </div>
   )
