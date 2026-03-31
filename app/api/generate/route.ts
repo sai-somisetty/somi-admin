@@ -155,6 +155,64 @@ const fixTelugu = (str: string): string => {
     .replace(/\bchuskovadam\b/gi, 'chuskundham');
 };
 
+async function generateDetailedV3(
+  icmai_text: string,
+  concept_title: string,
+  chapter: string,
+  sub_chapter: string
+): Promise<string> {
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 8000,
+    system: SYSTEM_PROMPT,
+    messages: [{
+      role: 'user',
+      content: `CHAPTER: ${chapter}
+SUB-CHAPTER: ${sub_chapter}
+CONCEPT: ${concept_title || 'Unknown'}
+
+ICMAI OFFICIAL TEXT:
+"${icmai_text}"
+
+Write a DETAILED Mama explanation for Kitty.
+This is shown only when student asks for more detail.
+So be thorough, creative, and deeply helpful.
+
+INCLUDE ALL OF THESE:
+1. Simple intro (what is this concept basically)
+2. Why it exists (historical/practical reason)
+3. Real Indian company example 
+   (Tata, Infosys, Zomato, SBI, Amul etc)
+   Show exactly how concept applies in real business
+4. Break it into numbered buckets/categories
+   if the concept has multiple parts
+5. Common exam mistakes students make
+6. Mama's Exam Tip:
+   "Exam lo ee concept rasthe — [specific tip]"
+   What keywords to use, how many points,
+   what format examiner expects
+7. End with encouraging line for Kitty
+
+STYLE:
+- Natural conversational Tenglish
+- No word limit — be as detailed as needed
+- Use metaphors, analogies, real examples
+- Feel like a real elder sister explaining
+- NOT an essay — a conversation
+- Use line breaks for readability
+- Emojis allowed naturally (not forced)
+
+DO NOT return JSON.
+Return plain Tenglish text only.
+This will be stored as-is for student reading.`,
+    }],
+  })
+
+  return response.content[0].type === 'text'
+    ? response.content[0].text
+    : ''
+}
+
 async function generateWithRetry(
   prompt: string,
   retries = 2
@@ -230,10 +288,7 @@ tenglish_v2: CORPORATE EXAMPLE (3-4 sentences)
   Show concept in real business scenario.
   Different opening hook from v1 and v3.
 
-tenglish_v3: EMOTIONAL AND ENCOURAGING (3-4 sentences)
-  Focus on exam importance and anxiety reduction.
-  Use empathy phrases. Make Kitty feel confident.
-  Different opening hook from v1 and v2.
+tenglish_v3: output empty string only: ''
 
 is_key_concept: true if concept has Article/Section
   number OR key legal/accounting definition OR
@@ -285,13 +340,17 @@ RETURN EXACTLY THIS JSON:
 }`;
 
   try {
-    const text = await generateWithRetry(prompt);
-    const data = JSON.parse(text);
+    const [fastResult, detailedV3] = await Promise.all([
+      generateWithRetry(prompt),
+      generateDetailedV3(icmai_text, concept_title, chapter, sub_chapter),
+    ]);
+
+    const data = JSON.parse(fastResult);
 
     const result = {
       tenglish: fixTelugu(data.tenglish_v1 || ''),
       tenglish_variation_2: fixTelugu(data.tenglish_v2 || ''),
-      tenglish_variation_3: fixTelugu(data.tenglish_v3 || ''),
+      tenglish_variation_3: fixTelugu(detailedV3 || ''),
       is_key_concept: data.is_key_concept ?? false,
       kitty_question: fixTelugu(data.kitty_question || ''),
       mama_kitty_answer: fixTelugu(data.mama_kitty_answer || ''),

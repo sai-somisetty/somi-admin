@@ -786,7 +786,11 @@ export default function ContentPage() {
                         🧠 Mama&apos;s Tenglish
                       </label>
                       <div className="flex gap-1 mb-2">
-                        {([1, 2, 3] as const).map(v => (
+                        {([
+                          [1, '⚡ Quick'],
+                          [2, '🏢 Example'],
+                          [3, '📖 Deep Dive'],
+                        ] as const).map(([v, label]) => (
                           <button
                             key={v}
                             onClick={() => switchVariation(v)}
@@ -796,7 +800,7 @@ export default function ContentPage() {
                               color: currentVariation === v ? 'white' : 'var(--muted)',
                             }}
                           >
-                            Variation {v}
+                            {label}
                           </button>
                         ))}
                       </div>
