@@ -287,17 +287,22 @@ export default function ContentPage() {
     }
 
     const chapterNode = selectedPage
-      ? tree.find(n =>
-          n.chapter.chapter_number ===
-          selectedPage.chapter_number
-        )?.chapter
+      ? tree
+          .flatMap(p => p.chapters)
+          .find(n =>
+            n.chapter.paper_number === selectedPage.paper_number &&
+            n.chapter.chapter_number === selectedPage.chapter_number
+          )?.chapter
       : null
 
     const subNode = selectedPage
-      ? tree.flatMap(n => n.subChapters).find(s =>
-          s.chapter_number === selectedPage.chapter_number &&
-          s.sub_chapter_id === selectedPage.sub_chapter_id
-        )
+      ? tree
+          .flatMap(p => p.chapters.flatMap(n => n.subChapters))
+          .find(s =>
+            s.paper_number === selectedPage.paper_number &&
+            s.chapter_number === selectedPage.chapter_number &&
+            s.sub_chapter_id === selectedPage.sub_chapter_id
+          )
       : null
 
     setGenerating(true)
