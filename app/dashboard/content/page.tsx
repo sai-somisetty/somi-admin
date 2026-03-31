@@ -92,6 +92,20 @@ export default function ContentPage() {
   const [generating, setGenerating] = useState(false)
   const [generatedData, setGeneratedData] = useState<GeneratedData | null>(null)
   const [currentVariation, setCurrentVariation] = useState<1 | 2 | 3>(1)
+  const [loadingStep, setLoadingStep] = useState(0)
+
+  const LOADING_STEPS = [
+    "⚡ Initialising SOMI-NLP-v4.1 kernel...",
+    "🔬 Tokenising ICMAI corpus vectors...",
+    "🧬 Running Telugu morphological parser...",
+    "📊 Cross-referencing CMA syllabus index...",
+    "🤖 Activating Tenglish transformer layer...",
+    "🗺️ Applying AP/TS regional dialect weights...",
+    "🧠 Generating semantic concept embeddings...",
+    "📐 Calibrating pedagogical difficulty score...",
+    "🔗 Injecting Mama persona attention weights...",
+    "✅ Compiling SOMI knowledge output...",
+  ]
   const [showPageSelector, setShowPageSelector] = useState(false)
   const [pdfWidth, setPdfWidth] = useState(480)
   const [isDragging, setIsDragging] = useState(false)
@@ -271,14 +285,30 @@ export default function ContentPage() {
       alert('Please paste ICMAI text first.')
       return
     }
+
     const chapterNode = selectedPage
-      ? tree.flatMap(p => p.chapters).find(n => n.chapter.paper_number === selectedPage.paper_number && n.chapter.chapter_number === selectedPage.chapter_number)?.chapter
+      ? tree.find(n =>
+          n.chapter.chapter_number ===
+          selectedPage.chapter_number
+        )?.chapter
       : null
+
     const subNode = selectedPage
-      ? tree.flatMap(p => p.chapters.flatMap(n => n.subChapters)).find(s => s.paper_number === selectedPage.paper_number && s.chapter_number === selectedPage.chapter_number && s.sub_chapter_id === selectedPage.sub_chapter_id)
+      ? tree.flatMap(n => n.subChapters).find(s =>
+          s.chapter_number === selectedPage.chapter_number &&
+          s.sub_chapter_id === selectedPage.sub_chapter_id
+        )
       : null
 
     setGenerating(true)
+    setLoadingStep(0)
+
+    const stepInterval = setInterval(() => {
+      setLoadingStep(prev =>
+        prev < LOADING_STEPS.length - 1 ? prev + 1 : prev
+      )
+    }, 800)
+
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
@@ -286,11 +316,16 @@ export default function ContentPage() {
         body: JSON.stringify({
           icmai_text: form.text,
           concept_title: form.concept_title,
-          chapter: chapterNode ? `${chapterNode.chapter_number} — ${chapterNode.title}` : '',
-          sub_chapter: subNode ? `${subNode.sub_chapter_id} ${subNode.title}` : '',
+          chapter: chapterNode
+            ? `${chapterNode.chapter_number} — ${chapterNode.title}`
+            : '',
+          sub_chapter: subNode
+            ? `${subNode.sub_chapter_id} ${subNode.title}`
+            : '',
         }),
       })
-      const data: GeneratedData = await res.json()
+
+      const data = await res.json()
       setGeneratedData(data)
       setCurrentVariation(1)
       setForm(prev => ({
@@ -313,9 +348,14 @@ export default function ContentPage() {
       }))
     } catch (e) {
       console.error(e)
-      alert('AI generation failed. Check your API key.')
+      alert('SOMI Engine error. Check API key.')
     } finally {
-      setGenerating(false)
+      clearInterval(stepInterval)
+      setLoadingStep(LOADING_STEPS.length - 1)
+      setTimeout(() => {
+        setGenerating(false)
+        setLoadingStep(0)
+      }, 600)
     }
   }
 
@@ -620,21 +660,115 @@ export default function ContentPage() {
                           />
                         </div>
 
-                        <button
-                          onClick={generateWithAI}
-                          disabled={generating || !form.text.trim()}
-                          className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white transition-all disabled:opacity-50 cursor-pointer"
-                          style={{ background: generating ? '#6B7280' : '#0D9488' }}
-                        >
-                          {generating ? (
-                            <>
-                              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
-                              Generating...
-                            </>
-                          ) : (
-                            '✨ Generate with AI'
-                          )}
-                        </button>
+                        {generating ? (
+                          <div style={{
+                            background: '#0A2E28',
+                            borderRadius: 12,
+                            padding: '16px 20px',
+                            color: 'white',
+                            marginTop: 8,
+                          }}>
+                            <div style={{ marginBottom: 14 }}>
+                              {LOADING_STEPS.map((step, i) => (
+                                <div
+                                  key={i}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    padding: '3px 0',
+                                    opacity: i <= loadingStep ? 1 : 0.25,
+                                    transition: 'opacity 0.4s ease',
+                                    fontSize: 11,
+                                    color: i < loadingStep
+                                      ? '#4ade80'
+                                      : i === loadingStep
+                                        ? '#ffffff'
+                                        : '#6b7280',
+                                  }}
+                                >
+                                  {i < loadingStep ? (
+                                    <span style={{
+                                      color: '#4ade80',
+                                      fontSize: 12,
+                                      minWidth: 12
+                                    }}>✓</span>
+                                  ) : i === loadingStep ? (
+                                    <span style={{
+                                      width: 8,
+                                      height: 8,
+                                      background: '#E67E22',
+                                      borderRadius: '50%',
+                                      display: 'inline-block',
+                                      flexShrink: 0,
+                                      animation: 'somipulse 0.8s ease-in-out infinite',
+                                    }}/>
+                                  ) : (
+                                    <span style={{
+                                      width: 8,
+                                      height: 8,
+                                      background: '#374151',
+                                      borderRadius: '50%',
+                                      display: 'inline-block',
+                                      flexShrink: 0,
+                                    }}/>
+                                  )}
+                                  <span>{step}</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div style={{
+                              height: 3,
+                              background: '#1a4a3a',
+                              borderRadius: 2,
+                              overflow: 'hidden',
+                              marginBottom: 8,
+                            }}>
+                              <div style={{
+                                height: '100%',
+                                background: 'linear-gradient(90deg, #E67E22, #f59e0b)',
+                                borderRadius: 2,
+                                width: `${((loadingStep + 1) / LOADING_STEPS.length) * 100}%`,
+                                transition: 'width 0.5s ease',
+                              }}/>
+                            </div>
+
+                            <p style={{
+                              fontSize: 10,
+                              color: '#6b7280',
+                              textAlign: 'center',
+                              letterSpacing: '0.05em',
+                              textTransform: 'uppercase',
+                            }}>
+                              SOMI Engine v4.1 · Processing
+                            </p>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={generateWithAI}
+                            disabled={!form.text.trim()}
+                            style={{
+                              background: form.text.trim()
+                                ? 'linear-gradient(135deg, #0D9488, #0A2E28)'
+                                : '#9ca3af',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: 10,
+                              padding: '10px 20px',
+                              fontSize: 13,
+                              fontWeight: 700,
+                              cursor: form.text.trim() ? 'pointer' : 'not-allowed',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              transition: 'opacity 0.2s',
+                              marginTop: 8,
+                            }}
+                          >
+                            ⚡ Run SOMI Engine
+                          </button>
+                        )}
                       </div>
                     </div>
 

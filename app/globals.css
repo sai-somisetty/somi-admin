@@ -36,3 +36,14 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #b0aca8;
 }
+
+@keyframes somipulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.4);
+  }
+}
