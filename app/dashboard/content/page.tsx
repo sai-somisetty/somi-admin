@@ -281,6 +281,7 @@ export default function ContentPage() {
       check_explanation: concept.check_explanation || '',
       mama_response_correct: concept.mama_response_correct || '',
       mama_response_wrong: concept.mama_response_wrong || '',
+      exam_rubric: concept.exam_rubric || null,
     })
     setEditingId(concept.id)
     setGeneratedData(null)

@@ -94,6 +94,18 @@ export interface Concept {
   check_explanation: string | null
   mama_response_correct: string | null
   mama_response_wrong: string | null
+  mamas_tip: string | null
+  exam_rubric: {
+    must_keywords: string[]
+    bonus_keywords: string[]
+    min_points: number
+    format: string
+    marks: number
+    memory_trick: string
+    example_company: string
+    common_mistakes: string[]
+    model_answer_hints: string[]
+  } | null
   is_verified: boolean
   verified_by: string | null
   verified_at: string | null
