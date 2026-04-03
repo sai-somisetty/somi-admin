@@ -26,6 +26,18 @@ interface AddPageTarget {
   sub_chapter_title: string
 }
 
+interface ExamRubric {
+  must_keywords: string[]
+  bonus_keywords: string[]
+  min_points: number
+  format: string
+  marks: number
+  memory_trick: string
+  example_company: string
+  common_mistakes: string[]
+  model_answer_hints: string[]
+}
+
 interface GeneratedData {
   tenglish: string
   tenglish_variation_2: string
@@ -39,6 +51,7 @@ interface GeneratedData {
   check_explanation: string
   mama_response_correct: string
   mama_response_wrong: string
+  exam_rubric: ExamRubric | null
 }
 
 const emptyAddPageForm = {
@@ -67,6 +80,7 @@ const emptyForm = {
   check_explanation: '',
   mama_response_correct: '',
   mama_response_wrong: '',
+  exam_rubric: null as ExamRubric | null,
 }
 
 type FormState = typeof emptyForm
@@ -350,6 +364,7 @@ export default function ContentPage() {
         check_explanation: data.check_explanation || '',
         mama_response_correct: data.mama_response_correct || '',
         mama_response_wrong: data.mama_response_wrong || '',
+        exam_rubric: data.exam_rubric || null,
       }))
     } catch (e) {
       console.error(e)
@@ -416,6 +431,7 @@ export default function ContentPage() {
         check_explanation: form.check_explanation || null,
         mama_response_correct: form.mama_response_correct || null,
         mama_response_wrong: form.mama_response_wrong || null,
+        exam_rubric: form.exam_rubric || null,
         is_verified: false,
         needs_work: false,
         created_by: user.id,
@@ -956,6 +972,156 @@ export default function ContentPage() {
                           />
                         </div>
                       </div>
+                    </div>
+
+                    {/* ── Section 6: EXAM RUBRIC ── */}
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--accent)' }}>
+                        📊 Exam Rubric
+                      </p>
+                      <label className="block text-xs font-semibold mb-2" style={{ color: 'var(--muted)' }}>
+                        📊 Exam Rubric (Auto-generated)
+                      </label>
+                      {form.exam_rubric && (
+                        <div style={{
+                          background: '#f0fdf4',
+                          border: '1px solid #86efac',
+                          borderRadius: 8,
+                          padding: 12,
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                        }}>
+                          <p style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: '#15803d',
+                            marginBottom: 8
+                          }}>
+                            📊 Exam Rubric — Used by Exam Engine
+                          </p>
+
+                          <div style={{ marginBottom: 6 }}>
+                            <span style={{ color: '#15803d', fontWeight: 600 }}>
+                              Must Keywords:
+                            </span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                              {form.exam_rubric.must_keywords?.map((kw: string, i: number) => (
+                                <span key={i} style={{
+                                  background: '#dcfce7',
+                                  color: '#15803d',
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  fontSize: 10,
+                                }}>
+                                  {kw}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div style={{ marginBottom: 6 }}>
+                            <span style={{ color: '#0369a1', fontWeight: 600 }}>
+                              Bonus Keywords:
+                            </span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                              {form.exam_rubric.bonus_keywords?.map((kw: string, i: number) => (
+                                <span key={i} style={{
+                                  background: '#dbeafe',
+                                  color: '#0369a1',
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  fontSize: 10,
+                                }}>
+                                  {kw}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr 1fr',
+                            gap: 8,
+                            marginBottom: 6
+                          }}>
+                            <div>
+                              <span style={{ color: '#6b7280', fontSize: 10 }}>Min Points</span>
+                              <p style={{ fontWeight: 700, color: '#1f2937' }}>
+                                {form.exam_rubric.min_points}
+                              </p>
+                            </div>
+                            <div>
+                              <span style={{ color: '#6b7280', fontSize: 10 }}>Format</span>
+                              <p style={{ fontWeight: 700, color: '#1f2937' }}>
+                                {form.exam_rubric.format}
+                              </p>
+                            </div>
+                            <div>
+                              <span style={{ color: '#6b7280', fontSize: 10 }}>Marks</span>
+                              <p style={{ fontWeight: 700, color: '#1f2937' }}>
+                                {form.exam_rubric.marks}
+                              </p>
+                            </div>
+                          </div>
+
+                          {form.exam_rubric.memory_trick && (
+                            <div style={{ marginBottom: 6 }}>
+                              <span style={{ color: '#7c3aed', fontWeight: 600 }}>
+                                🧠 Memory Trick:
+                              </span>
+                              <p style={{ color: '#7c3aed', fontSize: 11 }}>
+                                {form.exam_rubric.memory_trick}
+                              </p>
+                            </div>
+                          )}
+
+                          {form.exam_rubric.example_company && (
+                            <div style={{ marginBottom: 6 }}>
+                              <span style={{ color: '#92400e', fontWeight: 600 }}>
+                                🏢 Example Company:
+                              </span>
+                              <p style={{ color: '#92400e', fontSize: 11 }}>
+                                {form.exam_rubric.example_company}
+                              </p>
+                            </div>
+                          )}
+
+                          <div style={{ marginBottom: 6 }}>
+                            <span style={{ color: '#dc2626', fontWeight: 600 }}>
+                              Common Mistakes:
+                            </span>
+                            {form.exam_rubric.common_mistakes?.map((m: string, i: number) => (
+                              <p key={i} style={{
+                                color: '#dc2626',
+                                fontSize: 10,
+                                margin: '2px 0'
+                              }}>
+                                {i + 1}. {m}
+                              </p>
+                            ))}
+                          </div>
+
+                          <div>
+                            <span style={{ color: '#92400e', fontWeight: 600 }}>
+                              Answer Hints:
+                            </span>
+                            {form.exam_rubric.model_answer_hints?.map((h: string, i: number) => (
+                              <p key={i} style={{
+                                color: '#92400e',
+                                fontSize: 10,
+                                margin: '2px 0'
+                              }}>
+                                {(['Start:', 'Middle:', 'End:'] as const)[i]} {h}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {!form.exam_rubric && (
+                        <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                          Run SOMI Engine to auto-generate exam rubric
+                        </p>
+                      )}
                     </div>
 
                     {/* ── Action buttons ── */}

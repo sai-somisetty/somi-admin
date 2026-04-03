@@ -504,6 +504,60 @@ mama_response_wrong: Tenglish 1-2 sentences.
 mamas_tip: Exam strategy in Mama's Tenglish.
   What to write, how many points, keywords.
   2-3 sentences. Start with "Exam lo..."
+  Plain conversational text for student to read.
+
+exam_rubric: Structured JSON object for exam engine.
+  Generate this EXACTLY:
+  {
+    "must_keywords": [
+      "exact keyword 1 examiner expects",
+      "exact keyword 2",
+      "exact keyword 3",
+      "exact keyword 4"
+    ],
+    "bonus_keywords": [
+      "advanced keyword that gets extra marks",
+      "another bonus keyword"
+    ],
+    "min_points": 3,
+    "format": "paragraph or points",
+    "marks": 5,
+    "memory_trick": "Short memory trick if any else empty string",
+    "example_company": "Best company to use as example in exam",
+    "common_mistakes": [
+      "Most common mistake students make",
+      "Second common mistake",
+      "Third common mistake"
+    ],
+    "model_answer_hints": [
+      "How to START the answer",
+      "What to include in MIDDLE",
+      "How to END the answer"
+    ]
+  }
+
+  Rules for exam_rubric:
+  - must_keywords: words examiner MUST see to give marks
+    Use exact legal/accounting terminology
+    Minimum 4, maximum 8 keywords
+  - bonus_keywords: advanced terms for extra marks
+    Minimum 2 keywords
+  - min_points: minimum points student must write
+    MCQ concepts: 2-3 points
+    Theory concepts: 4-5 points
+    Complex concepts: 6-8 points
+  - format: "paragraph" for theory
+             "points" for lists/classifications
+             "both" if either works
+  - marks: typical marks in ICMAI exam (1,2,4,5,8,10)
+  - memory_trick: catchy trick to remember
+    Empty string "" if no good trick exists
+  - example_company: best real company for exam answer
+    Pick CMA employer if relevant
+    (ONGC, GAIL, Cipla, Deloitte, Tata, Reliance etc)
+  - common_mistakes: exactly 3 mistakes
+  - model_answer_hints: exactly 3 hints
+    Start/Middle/End structure
 
 RETURN EXACTLY THIS JSON:
 {
@@ -520,7 +574,18 @@ RETURN EXACTLY THIS JSON:
   "check_explanation": "...",
   "mama_response_correct": "...",
   "mama_response_wrong": "...",
-  "mamas_tip": "..."
+  "mamas_tip": "...",
+  "exam_rubric": {
+    "must_keywords": ["...", "...", "...", "..."],
+    "bonus_keywords": ["...", "..."],
+    "min_points": 4,
+    "format": "paragraph",
+    "marks": 5,
+    "memory_trick": "...",
+    "example_company": "...",
+    "common_mistakes": ["...", "...", "..."],
+    "model_answer_hints": ["...", "...", "..."]
+  }
 }`;
 
   try {
@@ -552,6 +617,17 @@ RETURN EXACTLY THIS JSON:
       mama_response_correct: fixTelugu(data.mama_response_correct || ''),
       mama_response_wrong: fixTelugu(data.mama_response_wrong || ''),
       mamas_tip: fixTelugu(data.mamas_tip || ''),
+      exam_rubric: data.exam_rubric || {
+        must_keywords: [],
+        bonus_keywords: [],
+        min_points: 3,
+        format: 'paragraph',
+        marks: 5,
+        memory_trick: '',
+        example_company: '',
+        common_mistakes: [],
+        model_answer_hints: [],
+      },
     };
 
     return NextResponse.json(result);
