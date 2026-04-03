@@ -123,6 +123,7 @@ export default function ContentPage() {
   const [showPageSelector, setShowPageSelector] = useState(false)
   const [pdfWidth, setPdfWidth] = useState(480)
   const [isDragging, setIsDragging] = useState(false)
+  const [pdfPageOffset, setPdfPageOffset] = useState(0)
 
   useEffect(() => {
     const u = getStoredUser()
@@ -220,6 +221,7 @@ export default function ContentPage() {
     setForm(emptyForm)
     setGeneratedData(null)
     setCurrentVariation(1)
+    setPdfPageOffset(0)
     const parentSub = tree
       .flatMap(p => p.chapters.flatMap(n => n.subChapters))
       .find(s => s.paper_number === page.paper_number && s.chapter_number === page.chapter_number && s.sub_chapter_id === page.sub_chapter_id)
@@ -267,8 +269,8 @@ export default function ContentPage() {
       heading: concept.heading || '',
       text: concept.text,
       tenglish: concept.tenglish || '',
-      tenglish_variation_2: '',
-      tenglish_variation_3: '',
+      tenglish_variation_2: concept.tenglish_variation_2 || '',
+      tenglish_variation_3: concept.tenglish_variation_3 || '',
       is_key_concept: concept.is_key_concept,
       kitty_question: concept.kitty_question || '',
       mama_kitty_answer: concept.mama_kitty_answer || '',
@@ -421,6 +423,8 @@ export default function ContentPage() {
         heading: form.heading || null,
         text: form.text,
         tenglish: form.tenglish || null,
+        tenglish_variation_2: form.tenglish_variation_2 || null,
+        tenglish_variation_3: form.tenglish_variation_3 || null,
         is_key_concept: form.is_key_concept,
         kitty_question: form.is_key_concept ? form.kitty_question || null : null,
         mama_kitty_answer: form.is_key_concept ? form.mama_kitty_answer || null : null,
@@ -1191,10 +1195,87 @@ export default function ContentPage() {
         overflow: 'auto',
         borderLeft: '1px solid #e5e7eb',
         background: '#f9fafb',
+        display: 'flex',
+        flexDirection: 'column',
       }}>
-        {selectedPage ? (
-          <PDFViewer bookPage={selectedPage.book_page} />
-        ) : (
+        {selectedPage ? (() => {
+          const displayBookPage = selectedPage.book_page + pdfPageOffset
+          return (
+            <>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 12px',
+                background: '#f9fafb',
+                borderBottom: '1px solid #e5e7eb',
+                flexShrink: 0,
+              }}>
+                <button
+                  onClick={() => setPdfPageOffset(p => p - 1)}
+                  disabled={displayBookPage <= 1}
+                  style={{
+                    background: 'none',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: 6,
+                    padding: '4px 10px',
+                    cursor: displayBookPage <= 1 ? 'not-allowed' : 'pointer',
+                    fontSize: 13,
+                    color: '#374151',
+                    opacity: displayBookPage <= 1 ? 0.4 : 1,
+                  }}
+                >
+                  ← Prev Page
+                </button>
+
+                <span style={{
+                  fontSize: 12,
+                  color: '#6b7280',
+                  fontWeight: 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}>
+                  Book Page {displayBookPage}
+                  {pdfPageOffset !== 0 && (
+                    <button
+                      onClick={() => setPdfPageOffset(0)}
+                      style={{
+                        marginLeft: 4,
+                        fontSize: 10,
+                        color: '#E67E22',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      Reset
+                    </button>
+                  )}
+                </span>
+
+                <button
+                  onClick={() => setPdfPageOffset(p => p + 1)}
+                  style={{
+                    background: 'none',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: 6,
+                    padding: '4px 10px',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    color: '#374151',
+                  }}
+                >
+                  Next Page →
+                </button>
+              </div>
+              <div style={{ flex: 1, overflow: 'auto' }}>
+                <PDFViewer bookPage={displayBookPage} />
+              </div>
+            </>
+          )
+        })() : (
           <div style={{
             display: 'flex',
             alignItems: 'center',
