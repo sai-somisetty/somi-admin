@@ -371,6 +371,8 @@ MANDATORY STRUCTURE:
    Numbered breakdown of all parts/types/categories.
    Each part gets bold header.
    Real different example for each part.
+   If concept has 3+ categories or types, present as a table instead of bullet points.
+   Table header in English, examples in Tenglish.
 
 5. **Common exam lo students chese mistakes:**
    Exactly 4 numbered mistakes.
@@ -396,6 +398,22 @@ MANDATORY STRUCTURE:
 
 STYLE RULES:
 - Use **bold headers** for each section
+- Use markdown TABLES when concept has categories, classifications, or comparisons
+   Format example:
+   | Category | Who Makes It | Example |
+   |----------|-------------|---------|
+   | Union List | Only Parliament | Defence, Railways |
+   | State List | Only State Legislature | Police, Agriculture |
+   | Concurrent List | Both | Education, Marriage |
+   
+   Use tables for:
+   - Any list with 2+ columns of info
+   - Comparisons between concepts
+   - Classifications with examples
+   - Before vs After scenarios
+   - Act vs Rule vs Regulation differences
+   
+   Tables make content scannable and examiner-friendly. Students can copy table structure directly into exam answers.
 - Bullet points for lists
 - Natural Tenglish throughout
 - Emojis used naturally (not forced)
