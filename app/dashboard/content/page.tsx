@@ -351,7 +351,7 @@ export default function ContentPage() {
 
       const data = await res.json()
       setGeneratedData(data)
-      setCurrentVariation(1)
+      setCurrentVariation(3)
       setForm(prev => ({
         ...prev,
         tenglish: data.tenglish || '',
@@ -834,7 +834,7 @@ export default function ContentPage() {
                         onChange={e => setCurrentVariationText(e.target.value)}
                         placeholder={generatedData ? '' : "Click 'Generate with AI' above first"}
                       />
-                      {currentVariation === 3 && form.tenglish_variation_3 && (
+                      {currentVariation === 3 && (
                         <div style={{
                           marginTop: 12,
                           padding: 16,
