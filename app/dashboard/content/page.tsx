@@ -1,5 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
@@ -832,6 +834,23 @@ export default function ContentPage() {
                         onChange={e => setCurrentVariationText(e.target.value)}
                         placeholder={generatedData ? '' : "Click 'Generate with AI' above first"}
                       />
+                      {currentVariation === 3 && form.tenglish_variation_3 && (
+                        <div style={{
+                          marginTop: 12,
+                          padding: 16,
+                          background: "#f9f9f9",
+                          borderRadius: 12,
+                          border: "1px solid #e0e0e0"
+                        }}>
+                          <div style={{ fontSize: 10, fontWeight: 700,
+                            color: "#666", marginBottom: 8 }}>
+                            PREVIEW
+                          </div>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {form.tenglish_variation_3}
+                          </ReactMarkdown>
+                        </div>
+                      )}
                     </div>
 
                     {/* ── Section 3: KITTY INTERACTION ── */}
