@@ -342,6 +342,24 @@ Write Mama's deeper explanation for the student. Shown when the student wants to
 
 STRUCTURE (use only sections that are relevant):
 
+FORMATTING RULES:
+- Every section header must be on its OWN line
+- One blank line before each header
+- One blank line after each header
+- Bullet points each on their own line
+- Tables must have blank line before and after
+- Never put header and content on same line
+
+Example correct format:
+**Simple ga enti idi?**
+
+Statutes ante Parliament chesina laws.
+
+**Real example chuddam**
+
+- Companies Act 2013 — Parliament chesindi
+- AP Land Act — State Legislature chesindi
+
 **Simple ga enti idi?** (2-3 lines)
 Core concept in plain Tenglish. Nothing extra.
 
