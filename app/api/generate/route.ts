@@ -372,7 +372,15 @@ STYLE:
 
   const text = response.content[0].type === 'text'
     ? response.content[0].text : '';
-  return fixTelugu(text);
+  // Strip JSON wrapper if present
+  let cleaned = text;
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed.explanation) cleaned = parsed.explanation;
+  } catch {
+    cleaned = text;
+  }
+  return fixTelugu(cleaned);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
