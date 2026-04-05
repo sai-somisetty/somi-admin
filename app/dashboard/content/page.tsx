@@ -811,8 +811,8 @@ export default function ContentPage() {
                       <div className="flex gap-1 mb-2">
                         {([
                           [1, '⚡ Quick'],
-                          [2, '🏢 Example'],
-                          [3, '📖 Deep Dive'],
+                          [2, '📝 Revise'],
+                          [3, '📖 Master'],
                         ] as const).map(([v, label]) => (
                           <button
                             key={v}
