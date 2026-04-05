@@ -334,57 +334,70 @@ CONCEPT: ${concept_title || 'Unknown'}
 ICMAI OFFICIAL TEXT:
 "${icmai_text}"
 
-STRICT RULE: Explain ONLY what is in the ICMAI text above. Do NOT add extra topics, related concepts, or additional content beyond what the text mentions.
+Write Mama's MASTER explanation for the student.
+This is the deepest level — student reads this
+when they want to truly master the concept.
 
-DEPTH RULE: Use only as many words as needed. A simple concept needs 200-300 words. A complex concept needs 400-600 words. NEVER pad content just because tokens are available.
+STRICT RULES:
+- Explain ONLY what is in the ICMAI text above
+- ALWAYS use bullet points — never paragraphs
+- Use numbered lists for steps/sequences
+- Use markdown TABLES for any comparison,
+  classification, or category
+- Be specific — real names, numbers, years
+- Natural Tenglish throughout
+- Total: 400-600 words maximum
 
-Write Mama's deeper explanation for the student. Shown when the student wants to understand better.
+STRUCTURE:
 
-STRUCTURE (use only sections that are relevant):
+**[Concept] ante enti?**
 
-FORMATTING RULES:
-- Every section header must be on its OWN line
-- One blank line before each header
-- One blank line after each header
-- Bullet points each on their own line
-- Tables must have blank line before and after
-- Never put header and content on same line
+- Core definition bullet point
+- What it means practically
+- Why it exists
 
-Example correct format:
-**Simple ga enti idi?**
+**Enduku important?**
 
-Statutes ante Parliament chesina laws.
+- Reason 1
+- Reason 2
+- Exam relevance
 
-**Real example chuddam**
+**Real India lo chuddam**
 
-- Companies Act 2013 — Parliament chesindi
-- AP Land Act — State Legislature chesindi
+Pick the MOST dramatic and memorable real Indian
+example — political events, business drama,
+supply chain incidents, CMA employer stories,
+local AP/TS examples.
+Think freely — Satyam scam, Jio vs Airtel,
+Tata Nano Singur, FSSAI Maggi ban,
+COVID supply chain, GST implementation,
+CBN AP investments, Yes Bank collapse.
+Show as bullet points:
+- Specific detail with real name/number
+- How concept applies exactly here
+- Another angle of same example
 
-**Simple ga enti idi?** (2-3 lines)
-Core concept in plain Tenglish. Nothing extra.
+**[If types/categories exist — TABLE]**
 
-**Asalu enduku idi important?**
-Why this specific concept matters.
-ONLY based on the ICMAI text above.
-
-**Real example chuddam**
-ONE specific Indian example that illustrates EXACTLY this concept — nothing more.
-3-4 sentences max.
+| Category | Details | Example |
+|----------|---------|---------|
+| Type 1   | Detail  | Real example |
+| Type 2   | Detail  | Real example |
 
 **Exam lo ela raayali?**
-Exact keywords examiner wants.
-How many points, what format.
-Memory trick if any.
 
-**Career connection** (1 line)
-Which CMA employer uses this concept.
+- Keywords: [exact terms examiner wants]
+- Format: [points or paragraph]
+- Minimum points: [number]
+- Memory trick: [if applicable]
+- Best example to use: [company/case]
 
-STYLE:
-- Natural Tenglish
-- Bold headers only for sections above
-- Tables ONLY if concept has classifications
-- No padding, no repetition
-- Stop when concept is fully explained`
+**Career connection**
+
+- Which CMA employer uses this concept
+- Specific situation student will face
+
+Do NOT return JSON — plain markdown only.`
     }],
   });
 
