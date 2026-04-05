@@ -487,9 +487,13 @@ mama_response_wrong: Tenglish 1-2 sentences.
   Then re-explain key point simply.
 
 mamas_tip: Exam strategy in Mama's Tenglish.
-  What to write, how many points, keywords.
-  2-3 sentences. Start with "Exam lo..."
-  Plain conversational text for student to read.
+  Format as bullet points ONLY. No paragraphs.
+  Start with "Exam lo:" then bullet points:
+  - What keywords to write
+  - How many points to write
+  - What format (paragraph/points)
+  - Any memory trick
+  Maximum 4 bullet points. Each bullet max 1 line. Start each with "•"
 
 exam_rubric: Structured JSON object for exam engine.
   Generate this EXACTLY:
