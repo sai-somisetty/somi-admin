@@ -433,14 +433,21 @@ tenglish_v1: SHORT AND PUNCHY (2-3 sentences max)
   Different opening hook from v2.
   No company example needed.
 
-tenglish_v2: REAL WORLD EXAMPLE (3-4 sentences)
-  Pick the MOST RELEVANT real Indian scenario for the student.
-  Think freely — political events, business drama,
-  supply chain incidents, CMA employer stories,
-  local AP/TS examples, student daily life.
-  Do NOT just pick Tata or Zomato by default.
-  Pick what BEST illustrates THIS specific concept.
-  Different opening hook from v1.
+tenglish_v2: POINT-WISE REVISION SUMMARY
+  This is the REVISE tab — student reads this
+  before exam to quickly recall key points.
+
+  Format STRICTLY as:
+  • Definition in 1 crisp line
+  • Key terms/types as bullet points
+  • If concept has categories → small table
+  • Exam keywords to remember
+  • One memory trick if possible
+
+  NO storytelling. NO paragraphs.
+  Pure bullet points and tables only.
+  Max 150 words. Fast to read in 30 seconds.
+  Different from V1 — V1 explains, V2 summarizes.
 
 tenglish_v3: output empty string ""
   (Deep dive generated separately)
