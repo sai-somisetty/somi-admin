@@ -112,6 +112,7 @@ export default function ContentPage() {
   const [loadingStep, setLoadingStep] = useState(0)
   const [lockHolder, setLockHolder] = useState<string | null>(null)
   const [userProfile, setUserProfile] = useState<AdminUser | null>(null)
+  const [expandedConcept, setExpandedConcept] = useState<string | null>(null)
 
   const LOADING_STEPS = [
     "⚡ Initialising SOMI-NLP-v4.1 kernel...",
@@ -312,6 +313,30 @@ export default function ContentPage() {
     if (!confirm('Delete this concept?')) return
     await supabase.from('concepts').delete().eq('id', id)
     if (selectedPage) loadConcepts(selectedPage)
+  }
+
+  async function moveConcept(id: string, direction: 'up' | 'down') {
+    const idx = concepts.findIndex(c => c.id === id)
+    if (idx < 0) return
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (swapIdx < 0 || swapIdx >= concepts.length) return
+
+    const a = concepts[idx]
+    const b = concepts[swapIdx]
+
+    await Promise.all([
+      supabase.from('concepts').update({ order_index: b.order_index }).eq('id', a.id),
+      supabase.from('concepts').update({ order_index: a.order_index }).eq('id', b.id),
+    ])
+    if (selectedPage) loadConcepts(selectedPage)
+  }
+
+  function insertConceptAt(afterIndex: number) {
+    setForm(emptyForm)
+    setEditingId(null)
+    setGeneratedData(null)
+    setCurrentVariation(1)
+    setShowForm(true)
   }
 
   async function generateWithAI() {
@@ -575,13 +600,6 @@ export default function ContentPage() {
           <>
             {/* Concepts list + form */}
             <div className="flex-1 overflow-y-auto px-5 py-4">
-              {concepts.length === 0 && !showForm && (
-                <div className="rounded-xl border-2 border-dashed border-gray-200 p-8 text-center">
-                  <p className="text-sm font-medium" style={{ color: 'var(--muted)' }}>No concepts yet on this page</p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>Click &quot;Add Concept&quot; to start</p>
-                </div>
-              )}
-
               {lockHolder && (
                 <div className="rounded-xl px-4 py-3 mb-3 flex items-center gap-2" style={{ background: '#FEF3C7', border: '1px solid #FDE68A' }}>
                   <span>🔒</span>
@@ -589,48 +607,161 @@ export default function ContentPage() {
                 </div>
               )}
 
-              {concepts.map(concept => (
-                <div
-                  key={concept.id}
-                  className="rounded-xl shadow-sm p-4 mb-3"
-                  style={{ background: 'var(--surface)' }}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+              {concepts.length === 0 && !showForm && (
+                <div className="rounded-xl border-2 border-dashed border-gray-200 p-8 text-center">
+                  <p className="text-sm font-medium" style={{ color: 'var(--muted)' }}>No concepts yet on this page</p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>Click &quot;Add Concept&quot; to start</p>
+                </div>
+              )}
+
+              {/* Concept count header */}
+              {concepts.length > 0 && (
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
+                    {concepts.length} concept{concepts.length !== 1 ? 's' : ''} on this page
+                  </span>
+                  <button
+                    onClick={() => setExpandedConcept(null)}
+                    className="text-xs px-2 py-1 rounded hover:bg-gray-100 cursor-pointer"
+                    style={{ color: 'var(--muted)' }}
+                  >
+                    Collapse all
+                  </button>
+                </div>
+              )}
+
+              {concepts.map((concept, idx) => {
+                const isExpanded = expandedConcept === concept.id
+                const hasGenerated = !!concept.tenglish
+                return (
+                  <div key={concept.id}>
+                    {/* Concept card — compact by default */}
+                    <div
+                      className="rounded-lg shadow-sm mb-1 overflow-hidden"
+                      style={{
+                        background: 'var(--surface)',
+                        border: isExpanded ? '1px solid var(--accent)' : '1px solid #f0f0ec',
+                      }}
+                    >
+                      {/* Compact header — always visible */}
+                      <div
+                        className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-gray-50 transition-colors"
+                        onClick={() => setExpandedConcept(isExpanded ? null : concept.id)}
+                      >
+                        {/* Order number */}
                         <span
-                          className="text-xs font-bold px-2 py-0.5 rounded-full"
-                          style={{ background: '#0A2E28', color: 'white' }}
+                          className="text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                          style={{ background: '#0A2E28', color: 'white', fontSize: 10 }}
                         >
-                          #{concept.order_index}
+                          {concept.order_index}
                         </span>
-                        <span className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
+
+                        {/* Title */}
+                        <span className="text-sm font-medium flex-1 truncate" style={{ color: 'var(--text)' }}>
                           {concept.concept_title || 'Untitled concept'}
                         </span>
+
+                        {/* Status badge */}
                         <ConceptStatusBadge concept={concept} />
+
+                        {/* Generated indicator */}
+                        {hasGenerated ? (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-600" title="Has Tenglish">🤖</span>
+                        ) : (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-gray-50 text-gray-400" title="No Tenglish yet">○</span>
+                        )}
+
+                        {/* Expand chevron */}
+                        <span className="text-xs shrink-0" style={{ color: 'var(--muted)' }}>
+                          {isExpanded ? '▲' : '▼'}
+                        </span>
                       </div>
-                      <p className="text-xs line-clamp-2" style={{ color: 'var(--muted)' }}>
-                        {concept.text}
-                      </p>
+
+                      {/* Expanded body */}
+                      {isExpanded && (
+                        <div className="border-t border-gray-100 px-3 py-3">
+                          {/* Text preview */}
+                          <div className="rounded-lg p-3 mb-3" style={{ background: '#f9fafb' }}>
+                            <p className="text-xs font-bold mb-1" style={{ color: 'var(--muted)' }}>ICMAI Text</p>
+                            <p className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>
+                              {concept.text}
+                            </p>
+                          </div>
+
+                          {/* Quick tenglish preview if generated */}
+                          {concept.tenglish && (
+                            <div className="rounded-lg p-3 mb-3" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
+                              <p className="text-xs font-bold mb-1" style={{ color: 'var(--accent)' }}>⚡ Quick (Tenglish)</p>
+                              <p className="text-sm" style={{ color: 'var(--text)' }}>{concept.tenglish}</p>
+                            </div>
+                          )}
+
+                          {/* MCQ preview if exists */}
+                          {concept.check_question && (
+                            <div className="rounded-lg p-2 mb-3" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                              <p className="text-xs font-bold" style={{ color: '#16a34a' }}>❓ {concept.check_question}</p>
+                            </div>
+                          )}
+
+                          {/* Action buttons */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              onClick={() => startEdit(concept)}
+                              className="text-xs px-3 py-1.5 rounded-lg font-medium text-white cursor-pointer"
+                              style={{ background: 'var(--accent)' }}
+                            >
+                              ✏️ Edit
+                            </button>
+                            <button
+                              onClick={() => moveConcept(concept.id, 'up')}
+                              disabled={idx === 0}
+                              className="text-xs px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer disabled:opacity-30"
+                              style={{ color: 'var(--text)' }}
+                            >
+                              ↑ Up
+                            </button>
+                            <button
+                              onClick={() => moveConcept(concept.id, 'down')}
+                              disabled={idx === concepts.length - 1}
+                              className="text-xs px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer disabled:opacity-30"
+                              style={{ color: 'var(--text)' }}
+                            >
+                              ↓ Down
+                            </button>
+                            <div className="flex-1" />
+                            <button
+                              onClick={() => deleteConcept(concept.id)}
+                              className="text-xs px-3 py-1.5 rounded-lg border border-red-100 text-red-500 hover:bg-red-50 cursor-pointer"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex gap-2 shrink-0">
-                      <button
-                        onClick={() => startEdit(concept)}
-                        className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
-                        style={{ color: 'var(--text)' }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => deleteConcept(concept.id)}
-                        className="text-xs px-3 py-1.5 rounded-lg border border-red-100 text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
-                      >
-                        Delete
-                      </button>
-                    </div>
+
+                    {/* Insert between button — shows on hover */}
+                    {!showForm && (
+                      <div className="group flex items-center justify-center h-3 -my-0.5 relative">
+                        <button
+                          onClick={() => {
+                            setForm(emptyForm)
+                            setEditingId(null)
+                            setGeneratedData(null)
+                            setCurrentVariation(1)
+                            setShowForm(true)
+                          }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity absolute text-xs px-2 py-0.5 rounded bg-orange-50 text-orange-500 font-medium cursor-pointer border border-orange-200 z-10"
+                          style={{ fontSize: 10 }}
+                        >
+                          + Insert here
+                        </button>
+                        <div className="w-full border-b border-transparent group-hover:border-orange-200 transition-colors" />
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                )
+              })}
 
               {!showForm && (
                 <button
