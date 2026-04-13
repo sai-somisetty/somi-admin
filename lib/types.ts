@@ -3,7 +3,7 @@ export interface AdminUser {
   name: string
   email: string
   password_hash: string
-  role: 'intern' | 'admin'
+  role: 'intern' | 'expert' | 'admin'
   assigned_chapters: number[]
   is_active: boolean
   created_at: string
@@ -111,6 +111,7 @@ export interface Concept {
   verified_at: string | null
   needs_work: boolean
   rejection_note: string | null
+  review_status?: 'draft' | 'submitted' | 'approved' | 'rejected'
   created_by: string | null
   created_at: string
   updated_at: string
@@ -131,5 +132,5 @@ export interface AuthUser {
   id: string
   name: string
   email: string
-  role: 'intern' | 'admin'
+  role: 'intern' | 'expert' | 'admin'
 }

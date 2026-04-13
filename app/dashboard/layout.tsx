@@ -6,10 +6,12 @@ import { getStoredUser, logout } from '@/lib/auth'
 import { AuthUser } from '@/lib/types'
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: '📊', adminOnly: false },
-  { href: '/dashboard/content', label: 'Add Content', icon: '✏️', adminOnly: false },
-  { href: '/dashboard/review', label: 'Review Queue', icon: '✅', adminOnly: true },
-  { href: '/dashboard/users', label: 'Users', icon: '👥', adminOnly: true },
+  { href: '/dashboard', label: 'Dashboard', icon: '📊', roles: ['admin', 'expert', 'intern'] },
+  { href: '/dashboard/content', label: 'Add Content', icon: '✏️', roles: ['admin', 'expert', 'intern'] },
+  { href: '/dashboard/generate', label: 'Generate Queue', icon: '🤖', roles: ['admin', 'expert', 'intern'] },
+  { href: '/dashboard/review', label: 'Review Queue', icon: '✅', roles: ['admin', 'expert'] },
+  { href: '/dashboard/import', label: 'Bulk Import', icon: '📥', roles: ['admin'] },
+  { href: '/dashboard/users', label: 'Users', icon: '👥', roles: ['admin'] },
 ]
 
 const SIDEBAR_KEY = 'somi_sidebar_collapsed'
@@ -55,33 +57,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   }
 
-  const visibleNav = navItems.filter(item => !item.adminOnly || user.role === 'admin')
+  const visibleNav = navItems.filter(item => item.roles.includes(user.role))
+
+  const roleBadge: Record<string, { bg: string; color: string; label: string }> = {
+    admin: { bg: 'rgba(230,126,34,0.25)', color: '#f0a060', label: 'Admin' },
+    expert: { bg: 'rgba(124,58,237,0.25)', color: '#c4b5fd', label: 'Expert' },
+    intern: { bg: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.7)', label: 'Intern' },
+  }
+
+  const badge = roleBadge[user.role] || roleBadge.intern
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
-      {/* Sidebar */}
       <aside
         className="flex flex-col h-full shrink-0 transition-all duration-200"
         style={{ width: collapsed ? 48 : 240, background: 'var(--primary)', overflow: 'hidden' }}
       >
-        {/* Toggle button */}
         <div
           className="flex items-center border-b border-white/10 shrink-0"
-          style={{
-            height: 48,
-            justifyContent: collapsed ? 'center' : 'flex-end',
-            paddingRight: collapsed ? 0 : 8,
-          }}
+          style={{ height: 48, justifyContent: collapsed ? 'center' : 'flex-end', paddingRight: collapsed ? 0 : 8 }}
         >
           {!collapsed && (
             <div className="flex items-center gap-2 flex-1 px-5">
               <span className="text-white font-bold text-lg tracking-tight">SOMI</span>
-              <span
-                className="text-xs font-semibold px-1.5 py-0.5 rounded-md text-white"
-                style={{ background: 'var(--accent)' }}
-              >
-                Admin
-              </span>
+              <span className="text-xs font-semibold px-1.5 py-0.5 rounded-md text-white" style={{ background: 'var(--accent)' }}>Admin</span>
             </div>
           )}
           <button
@@ -94,15 +93,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </div>
 
-        {/* User info */}
         <div
           className="border-b border-white/10 shrink-0"
-          style={{
-            padding: collapsed ? '12px 0' : '16px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: collapsed ? 'center' : 'flex-start',
-          }}
+          style={{ padding: collapsed ? '12px 0' : '16px', display: 'flex', flexDirection: 'column', alignItems: collapsed ? 'center' : 'flex-start' }}
         >
           <div
             className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm"
@@ -116,24 +109,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <p className="text-white text-sm font-medium leading-tight mt-2">{user.name}</p>
               <span
                 className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-medium"
-                style={{
-                  background: user.role === 'admin' ? 'rgba(230,126,34,0.25)' : 'rgba(255,255,255,0.15)',
-                  color: user.role === 'admin' ? '#f0a060' : 'rgba(255,255,255,0.7)',
-                }}
+                style={{ background: badge.bg, color: badge.color }}
               >
-                {user.role === 'admin' ? 'Admin' : 'Intern'}
+                {badge.label}
               </span>
             </>
           )}
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 py-4 space-y-1 overflow-y-auto" style={{ paddingLeft: collapsed ? 0 : 12, paddingRight: collapsed ? 0 : 12 }}>
           {visibleNav.map(item => {
-            const isActive =
-              item.href === '/dashboard'
-                ? pathname === '/dashboard'
-                : pathname.startsWith(item.href)
+            const isActive = item.href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(item.href)
             return (
               <Link
                 key={item.href}
@@ -156,18 +142,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           })}
         </nav>
 
-        {/* Logout */}
         <div className="border-t border-white/10 pb-4 pt-3 shrink-0" style={{ paddingLeft: collapsed ? 0 : 12, paddingRight: collapsed ? 0 : 12 }}>
           <button
             onClick={handleLogout}
             title={collapsed ? 'Logout' : undefined}
             className="flex items-center rounded-lg text-sm transition-all hover:bg-white/10 cursor-pointer w-full"
-            style={{
-              gap: collapsed ? 0 : 12,
-              padding: collapsed ? '8px 0' : '8px 12px',
-              justifyContent: collapsed ? 'center' : 'flex-start',
-              color: 'rgba(255,255,255,0.55)',
-            }}
+            style={{ gap: collapsed ? 0 : 12, padding: collapsed ? '8px 0' : '8px 12px', justifyContent: collapsed ? 'center' : 'flex-start', color: 'rgba(255,255,255,0.55)' }}
           >
             <span className="text-base shrink-0">🚪</span>
             {!collapsed && 'Logout'}
@@ -175,7 +155,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      {/* Main content */}
       <main className="flex-1 overflow-hidden flex flex-col">
         {children}
       </main>

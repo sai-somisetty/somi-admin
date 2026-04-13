@@ -34,7 +34,11 @@ export async function login(email: string, password: string): Promise<AuthUser> 
   return user
 }
 
-export function logout() {
+export async function logout() {
+  const user = getStoredUser()
+  if (user) {
+    await supabase.from('concept_locks').delete().eq('locked_by', user.id)
+  }
   if (typeof window !== 'undefined') {
     localStorage.removeItem('somi_admin_user')
   }
@@ -52,7 +56,8 @@ export function getStoredUser(): AuthUser | null {
 }
 
 export function getHomeRoute(role: AuthUser['role']): string {
-  return role === 'admin' ? '/dashboard/review' : '/dashboard/content'
+  if (role === 'admin' || role === 'expert') return '/dashboard/review'
+  return '/dashboard/content'
 }
 
 export function requireAuth(): AuthUser {

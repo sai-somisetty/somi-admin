@@ -3,11 +3,12 @@ import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
+import { incrementActivity } from '@/lib/concept-locks'
 import type { AuthUser, Concept } from '@/lib/types'
 
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false })
 
-type Filter = 'all' | 'pending' | 'approved' | 'rejected'
+type Filter = 'all' | 'submitted' | 'pending' | 'approved' | 'rejected'
 
 interface ConceptRow extends Concept {
   creator_name: string | null
@@ -438,7 +439,7 @@ function ConceptCard({
 export default function ReviewPage() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [concepts, setConcepts] = useState<ConceptRow[]>([])
-  const [filter, setFilter] = useState<Filter>('pending')
+  const [filter, setFilter] = useState<Filter>('submitted')
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
@@ -496,10 +497,12 @@ export default function ReviewPage() {
     await supabase.from('concepts').update({
       is_verified: true,
       needs_work: false,
+      review_status: 'approved',
       verified_by: user.id,
       verified_at: new Date().toISOString(),
     }).eq('id', concept.id)
     await supabase.from('review_logs').insert({ concept_id: concept.id, reviewed_by: user.id, action: 'approved' })
+    await incrementActivity(user.id, 'concepts_approved')
     setExpanded(null)
     await loadConcepts()
     setActionLoading(false)
@@ -511,16 +514,19 @@ export default function ReviewPage() {
     await supabase.from('concepts').update({
       needs_work: true,
       is_verified: false,
+      review_status: 'rejected',
       rejection_note: note,
     }).eq('id', concept.id)
     await supabase.from('review_logs').insert({ concept_id: concept.id, reviewed_by: user.id, action: 'rejected', note })
+    await incrementActivity(user.id, 'concepts_rejected')
     setExpanded(null)
     await loadConcepts()
     setActionLoading(false)
   }
 
   const filtered = concepts.filter(c => {
-    if (filter === 'pending') return !c.is_verified && !c.needs_work
+    if (filter === 'submitted') return c.review_status === 'submitted' || (!c.is_verified && !c.needs_work && !c.review_status)
+    if (filter === 'pending') return !c.is_verified && !c.needs_work && (!c.review_status || c.review_status === 'draft')
     if (filter === 'approved') return c.is_verified
     if (filter === 'rejected') return c.needs_work
     return true
@@ -528,7 +534,8 @@ export default function ReviewPage() {
 
   const counts = {
     all: concepts.length,
-    pending: concepts.filter(c => !c.is_verified && !c.needs_work).length,
+    submitted: concepts.filter(c => c.review_status === 'submitted' || (!c.is_verified && !c.needs_work && !c.review_status)).length,
+    pending: concepts.filter(c => !c.is_verified && !c.needs_work && (!c.review_status || c.review_status === 'draft')).length,
     approved: concepts.filter(c => c.is_verified).length,
     rejected: concepts.filter(c => c.needs_work).length,
   }
@@ -545,7 +552,7 @@ export default function ReviewPage() {
 
         {/* Filter tabs */}
         <div className="flex gap-2 mb-5">
-          {(['all', 'pending', 'approved', 'rejected'] as Filter[]).map(f => (
+          {(['all', 'submitted', 'pending', 'approved', 'rejected'] as Filter[]).map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}

@@ -5,7 +5,8 @@ import remarkGfm from 'remark-gfm'
 import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
-import type { AuthUser, Paper, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
+import type { AuthUser, AdminUser, Paper, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
+import { acquireLock, releaseLock, incrementActivity } from '@/lib/concept-locks'
 
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false })
 
@@ -109,6 +110,8 @@ export default function ContentPage() {
   const [generatedData, setGeneratedData] = useState<GeneratedData | null>(null)
   const [currentVariation, setCurrentVariation] = useState<1 | 2 | 3>(1)
   const [loadingStep, setLoadingStep] = useState(0)
+  const [lockHolder, setLockHolder] = useState<string | null>(null)
+  const [userProfile, setUserProfile] = useState<AdminUser | null>(null)
 
   const LOADING_STEPS = [
     "⚡ Initialising SOMI-NLP-v4.1 kernel...",
@@ -131,6 +134,10 @@ export default function ContentPage() {
     const u = getStoredUser()
     setUser(u)
     loadTree()
+    if (u) {
+      supabase.from('admin_users').select('*').eq('id', u.id).single()
+        .then(({ data }) => { if (data) setUserProfile(data as AdminUser) })
+    }
   }, [])
 
   async function loadTree() {
@@ -263,7 +270,15 @@ export default function ContentPage() {
     })
   }
 
-  function startEdit(concept: Concept) {
+  async function startEdit(concept: Concept) {
+    if (user) {
+      const result = await acquireLock(concept.id, user.id)
+      if (!result.ok) {
+        setLockHolder(result.holder || 'Another user')
+        setTimeout(() => setLockHolder(null), 4000)
+        return
+      }
+    }
     const opts = concept.check_options as string[] | null
     setForm({
       concept_title: concept.concept_title || '',
@@ -352,6 +367,7 @@ export default function ContentPage() {
       const data = await res.json()
       setGeneratedData(data)
       setCurrentVariation(3)
+      if (user) incrementActivity(user.id, 'concepts_generated')
       setForm(prev => ({
         ...prev,
         tenglish: data.tenglish || '',
@@ -441,15 +457,20 @@ export default function ContentPage() {
         exam_rubric: form.exam_rubric || null,
         is_verified: false,
         needs_work: false,
+        review_status: submitForReview ? 'submitted' : 'draft',
         created_by: user.id,
         updated_at: new Date().toISOString(),
       }
 
       if (editingId) {
         await supabase.from('concepts').update(payload).eq('id', editingId)
+        await releaseLock(editingId, user.id)
       } else {
         await supabase.from('concepts').insert(payload)
       }
+
+      await incrementActivity(user.id, 'concepts_entered')
+      if (submitForReview) await incrementActivity(user.id, 'concepts_submitted')
 
       setShowForm(false)
       setEditingId(null)
@@ -558,6 +579,13 @@ export default function ContentPage() {
                 <div className="rounded-xl border-2 border-dashed border-gray-200 p-8 text-center">
                   <p className="text-sm font-medium" style={{ color: 'var(--muted)' }}>No concepts yet on this page</p>
                   <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>Click &quot;Add Concept&quot; to start</p>
+                </div>
+              )}
+
+              {lockHolder && (
+                <div className="rounded-xl px-4 py-3 mb-3 flex items-center gap-2" style={{ background: '#FEF3C7', border: '1px solid #FDE68A' }}>
+                  <span>🔒</span>
+                  <span className="text-sm font-medium" style={{ color: '#92400E' }}>{lockHolder} is currently editing this concept. Try again shortly.</span>
                 </div>
               )}
 
@@ -1151,7 +1179,10 @@ export default function ContentPage() {
                     {/* ── Action buttons ── */}
                     <div className="flex gap-3 pt-2 border-t border-gray-100">
                       <button
-                        onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyForm); setGeneratedData(null) }}
+                        onClick={() => {
+                          if (editingId && user) releaseLock(editingId, user.id)
+                          setShowForm(false); setEditingId(null); setForm(emptyForm); setGeneratedData(null)
+                        }}
                         className="rounded-lg px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
                         style={{ color: 'var(--text)' }}
                       >
@@ -1424,7 +1455,11 @@ export default function ContentPage() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
               <div>
                 <h2 className="text-base font-bold" style={{ color: 'var(--text)' }}>Select Page</h2>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>CMA Foundation — All Papers</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                  {user?.role === 'intern' && userProfile?.assigned_chapters && (userProfile.assigned_chapters as number[]).length > 0
+                    ? `Your chapters: ${(userProfile.assigned_chapters as number[]).map(c => `Ch ${c}`).join(', ')}`
+                    : 'CMA Foundation — All Papers'}
+                </p>
               </div>
               <button
                 onClick={() => setShowPageSelector(false)}
@@ -1441,8 +1476,13 @@ export default function ContentPage() {
                 <div className="flex items-center justify-center h-20">
                   <div className="w-5 h-5 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
                 </div>
-              ) : (
-                tree.map(paperNode => (
+              ) : (() => {
+                const assignedChs = userProfile?.assigned_chapters as number[] | undefined
+                const isIntern = user?.role === 'intern'
+                const filteredTree = isIntern && assignedChs && assignedChs.length > 0
+                  ? tree.map(pn => ({ ...pn, chapters: pn.chapters.filter(n => assignedChs.includes(n.chapter.chapter_number)) })).filter(pn => pn.chapters.length > 0)
+                  : tree
+                return filteredTree.map(paperNode => (
                   <div key={paperNode.paper.paper_number}>
                     {/* Paper row */}
                     <button
@@ -1554,7 +1594,7 @@ export default function ContentPage() {
                     })}
                   </div>
                 ))
-              )}
+              })()}
             </div>
           </div>
         </div>
@@ -1578,23 +1618,14 @@ function StatusDot({ status }: { status: string }) {
 }
 
 function ConceptStatusBadge({ concept }: { concept: Concept }) {
-  if (concept.is_verified) {
-    return (
-      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
-        Verified
-      </span>
-    )
+  if (concept.is_verified || concept.review_status === 'approved') {
+    return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Verified</span>
   }
-  if (concept.needs_work) {
-    return (
-      <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">
-        Needs Work
-      </span>
-    )
+  if (concept.review_status === 'submitted') {
+    return <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">Submitted</span>
   }
-  return (
-    <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 font-medium">
-      Draft
-    </span>
-  )
+  if (concept.needs_work || concept.review_status === 'rejected') {
+    return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">Needs Work</span>
+  }
+  return <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 font-medium">Draft</span>
 }

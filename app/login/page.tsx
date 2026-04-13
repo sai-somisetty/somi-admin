@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { login } from '@/lib/auth'
+import { login, getHomeRoute } from '@/lib/auth'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -17,11 +17,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const user = await login(email, password)
-      if (user.role === 'admin') {
-        router.push('/dashboard/review')
-      } else {
-        router.push('/dashboard/content')
-      }
+      router.push(getHomeRoute(user.role))
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {

@@ -21,7 +21,7 @@ export default function UsersPage() {
     name: '',
     email: '',
     password: '',
-    role: 'intern' as 'intern' | 'admin',
+    role: 'intern' as 'intern' | 'expert' | 'admin',
     assigned_chapters: [] as number[],
   })
   const [saving, setSaving] = useState(false)
@@ -173,9 +173,10 @@ export default function UsersPage() {
                 <select
                   className={inputCls}
                   value={form.role}
-                  onChange={e => setForm(p => ({ ...p, role: e.target.value as 'intern' | 'admin' }))}
+                  onChange={e => setForm(p => ({ ...p, role: e.target.value as 'intern' | 'expert' | 'admin' }))}
                 >
-                  <option value="intern">Intern</option>
+                  <option value="intern">Intern (data entry)</option>
+                  <option value="expert">Expert Reviewer</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
@@ -261,7 +262,7 @@ export default function UsersPage() {
                       <div className="flex items-center gap-3">
                         <div
                           className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-                          style={{ background: u.role === 'admin' ? 'var(--accent)' : 'var(--primary)' }}
+                          style={{ background: u.role === 'admin' ? 'var(--accent)' : u.role === 'expert' ? '#7c3aed' : 'var(--primary)' }}
                         >
                           {u.name.charAt(0).toUpperCase()}
                         </div>
@@ -275,8 +276,8 @@ export default function UsersPage() {
                       <span
                         className="text-xs font-medium px-2 py-0.5 rounded-full"
                         style={{
-                          background: u.role === 'admin' ? '#FEF3E8' : '#f0f0ec',
-                          color: u.role === 'admin' ? 'var(--accent)' : 'var(--muted)',
+                          background: u.role === 'admin' ? '#FEF3E8' : u.role === 'expert' ? '#F3E8FF' : '#f0f0ec',
+                          color: u.role === 'admin' ? 'var(--accent)' : u.role === 'expert' ? '#7c3aed' : 'var(--muted)',
                         }}
                       >
                         {u.role}
