@@ -112,14 +112,14 @@ export default function ContentPage() {
     p.sub_chapter_id === selSubChapter
   )
 
-  // Compute page range from sub-chapter start/end
-  const currentSubChapter = subChapters.find(sc =>
-    sc.course_id === selCourse && sc.paper_number === selPaper &&
-    sc.chapter_number === selChapter && sc.sub_chapter_id === selSubChapter
+  // Compute page range from CHAPTER start/end (chapter page range is known from index)
+  const currentChapter = chapters.find(ch =>
+    ch.course_id === selCourse && ch.paper_number === selPaper &&
+    ch.chapter_number === selChapter
   )
   const pageRange: number[] = []
-  if (currentSubChapter?.start_book_page && currentSubChapter?.end_book_page) {
-    for (let i = currentSubChapter.start_book_page; i <= currentSubChapter.end_book_page; i++) {
+  if (currentChapter?.start_book_page && currentChapter?.end_book_page) {
+    for (let i = currentChapter.start_book_page; i <= currentChapter.end_book_page; i++) {
       pageRange.push(i)
     }
   }
@@ -235,7 +235,7 @@ export default function ContentPage() {
         chapter_number: selChapter,
         sub_chapter_id: selSubChapter,
         book_page: selBookPage,
-        pdf_page: selBookPage + 8,
+        pdf_page: selBookPage + 12,
         status: 'in_progress',
       }, { onConflict: 'course_id,paper_number,chapter_number,book_page' })
 
@@ -405,6 +405,7 @@ export default function ContentPage() {
     document.addEventListener('mouseup', onUp)
   }
 
+  // ─── Get current sub-chapter + chapter info ──────────────────────────────
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center" style={{ background: 'var(--bg)' }}>
@@ -514,7 +515,7 @@ export default function ContentPage() {
               <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>
                 Page {selBookPage} of {pageRange.length > 0 ? `${pageRange[0]}–${pageRange[pageRange.length - 1]}` : '—'}
                 <span style={{ marginLeft: 8, color: 'var(--text)', fontWeight: 600 }}>
-                  {currentSubChapter ? `${currentSubChapter.sub_chapter_id} ${currentSubChapter.title}` : ''}
+                  {currentChapter ? `Ch ${currentChapter.chapter_number}: ${currentChapter.title}` : ''}
                 </span>
               </span>
               <button onClick={() => goToPage('next')} disabled={!hasNext} style={navBtnStyle} className="disabled:opacity-30">
@@ -579,6 +580,9 @@ export default function ContentPage() {
                       </span>
                       <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {para.heading || para.concept_title || `Paragraph ${para.order_index}`}
+                      </span>
+                      <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: '#f0f0ec', color: 'var(--muted)', flexShrink: 0 }}>
+                        {para.sub_chapter_id}
                       </span>
                       {isImage && <span title="Image" style={{ fontSize: 12 }}>📷</span>}
                       {para.tenglish && <span title="Generated" style={{ fontSize: 12 }}>🤖</span>}
