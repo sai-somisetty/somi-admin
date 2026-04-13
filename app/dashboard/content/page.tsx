@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
 import { acquireLock, releaseLock, incrementActivity } from '@/lib/concept-locks'
-import type { AuthUser, AdminUser, Paper, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
+import type { AuthUser, AdminUser, Course, Paper, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
 
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false })
 
@@ -24,6 +24,7 @@ export default function ContentPage() {
   const [userProfile, setUserProfile] = useState<AdminUser | null>(null)
 
   // Navigation data
+  const [courses, setCourses] = useState<Course[]>([])
   const [papers, setPapers] = useState<Paper[]>([])
   const [chapters, setChapters] = useState<Chapter[]>([])
   const [subChapters, setSubChapters] = useState<SubChapter[]>([])
@@ -31,6 +32,7 @@ export default function ContentPage() {
   const [loading, setLoading] = useState(true)
 
   // Current selection
+  const [selCourse, setSelCourse] = useState<string | null>(null)
   const [selPaper, setSelPaper] = useState<number | null>(null)
   const [selChapter, setSelChapter] = useState<number | null>(null)
   const [selSubChapter, setSelSubChapter] = useState<string | null>(null)
@@ -67,35 +69,44 @@ export default function ContentPage() {
 
   async function loadHierarchy() {
     setLoading(true)
-    const [{ data: pp }, { data: ch }, { data: sc }, { data: pg }] = await Promise.all([
-      supabase.from('papers').select('*').eq('course_id', 'cma').order('paper_number'),
-      supabase.from('chapters').select('*').eq('course_id', 'cma').order('paper_number').order('chapter_number'),
-      supabase.from('sub_chapters').select('*').eq('course_id', 'cma').order('paper_number').order('chapter_number').order('sub_chapter_id'),
-      supabase.from('content_pages').select('*').eq('course_id', 'cma').order('paper_number').order('chapter_number').order('book_page'),
+    const [{ data: co }, { data: pp }, { data: ch }, { data: sc }, { data: pg }] = await Promise.all([
+      supabase.from('courses').select('*').order('course_id'),
+      supabase.from('papers').select('*').order('course_id').order('paper_number'),
+      supabase.from('chapters').select('*').order('course_id').order('paper_number').order('chapter_number'),
+      supabase.from('sub_chapters').select('*').order('course_id').order('paper_number').order('chapter_number').order('sub_chapter_id'),
+      supabase.from('content_pages').select('*').order('course_id').order('paper_number').order('chapter_number').order('book_page'),
     ])
+    setCourses(co || [])
     setPapers(pp || [])
     setChapters(ch || [])
     setSubChapters(sc || [])
     setPages(pg || [])
     setLoading(false)
 
-    // Auto-select first paper
-    if (pp && pp.length > 0) {
-      setSelPaper(pp[0].paper_number)
+    // Auto-select first course
+    if (co && co.length > 0) {
+      setSelCourse(co[0].course_id)
     }
   }
 
   // ─── Filtered lists for dropdowns ────────────────────────────────────────
+  const filteredPapers = papers.filter(p =>
+    p.course_id === selCourse
+  )
+
   const filteredChapters = chapters.filter(ch =>
+    ch.course_id === selCourse &&
     ch.paper_number === selPaper
   )
 
   const filteredSubChapters = subChapters.filter(sc =>
+    sc.course_id === selCourse &&
     sc.paper_number === selPaper &&
     sc.chapter_number === selChapter
   )
 
   const filteredPages = pages.filter(p =>
+    p.course_id === selCourse &&
     p.paper_number === selPaper &&
     p.chapter_number === selChapter &&
     p.sub_chapter_id === selSubChapter
@@ -142,10 +153,25 @@ export default function ContentPage() {
     }
   }, [selPage, loadParagraphs])
 
+  // Auto-select first paper when course changes
+  useEffect(() => {
+    if (selCourse) {
+      const pps = papers.filter(p => p.course_id === selCourse)
+      if (pps.length > 0) {
+        setSelPaper(pps[0].paper_number)
+      } else {
+        setSelPaper(null)
+        setSelChapter(null)
+        setSelSubChapter(null)
+        setSelPage(null)
+      }
+    }
+  }, [selCourse, papers])
+
   // Auto-select first chapter when paper changes
   useEffect(() => {
-    if (selPaper) {
-      const chs = chapters.filter(ch => ch.paper_number === selPaper)
+    if (selCourse && selPaper) {
+      const chs = chapters.filter(ch => ch.course_id === selCourse && ch.paper_number === selPaper)
       if (chs.length > 0) {
         setSelChapter(chs[0].chapter_number)
       } else {
@@ -154,12 +180,12 @@ export default function ContentPage() {
         setSelPage(null)
       }
     }
-  }, [selPaper, chapters])
+  }, [selPaper, selCourse, chapters])
 
   // Auto-select first sub-chapter when chapter changes
   useEffect(() => {
-    if (selPaper && selChapter) {
-      const subs = subChapters.filter(sc => sc.paper_number === selPaper && sc.chapter_number === selChapter)
+    if (selCourse && selPaper && selChapter) {
+      const subs = subChapters.filter(sc => sc.course_id === selCourse && sc.paper_number === selPaper && sc.chapter_number === selChapter)
       if (subs.length > 0) {
         setSelSubChapter(subs[0].sub_chapter_id)
       } else {
@@ -167,19 +193,19 @@ export default function ContentPage() {
         setSelPage(null)
       }
     }
-  }, [selChapter, selPaper, subChapters])
+  }, [selChapter, selPaper, selCourse, subChapters])
 
   // Auto-select first page when sub-chapter changes
   useEffect(() => {
-    if (selPaper && selChapter && selSubChapter) {
-      const pgs = pages.filter(p => p.paper_number === selPaper && p.chapter_number === selChapter && p.sub_chapter_id === selSubChapter)
+    if (selCourse && selPaper && selChapter && selSubChapter) {
+      const pgs = pages.filter(p => p.course_id === selCourse && p.paper_number === selPaper && p.chapter_number === selChapter && p.sub_chapter_id === selSubChapter)
       if (pgs.length > 0) {
         setSelPage(pgs[0])
       } else {
         setSelPage(null)
       }
     }
-  }, [selChapter, selSubChapter, selPaper, pages])
+  }, [selChapter, selSubChapter, selPaper, selCourse, pages])
 
   // ─── Paragraph actions ───────────────────────────────────────────────────
   async function saveParagraph() {
@@ -381,14 +407,29 @@ export default function ContentPage() {
         }}>
           {/* Row 1: Dropdowns */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Course dropdown */}
+            <select
+              value={selCourse || ''}
+              onChange={e => setSelCourse(e.target.value || null)}
+              style={{ ...dropdownStyle, maxWidth: 180 }}
+            >
+              <option value="">Course</option>
+              {courses.map(c => (
+                <option key={c.course_id} value={c.course_id}>
+                  {c.title}
+                </option>
+              ))}
+            </select>
+
             {/* Paper/Subject dropdown */}
             <select
               value={selPaper || ''}
               onChange={e => setSelPaper(parseInt(e.target.value) || null)}
               style={dropdownStyle}
+              disabled={!selCourse}
             >
               <option value="">Select Subject</option>
-              {papers.map(p => (
+              {filteredPapers.map(p => (
                 <option key={p.paper_number} value={p.paper_number}>
                   Paper {p.paper_number}: {p.title}
                 </option>
