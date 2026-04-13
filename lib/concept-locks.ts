@@ -86,11 +86,21 @@ export async function incrementActivity(
     .eq('activity_date', today)
     .single()
 
-  if (existing) {
-    await supabase
-      .from('daily_activity')
-      .update({ [field]: ((existing as Record<string, number>)[field] || 0) + 1 })
-      .eq('id', existing.id)
+  if (existing && typeof existing === 'object' && 'id' in existing) {
+    const row = existing as unknown as {
+      id: string
+    } & Partial<
+      Record<
+        | 'concepts_entered'
+        | 'concepts_generated'
+        | 'concepts_submitted'
+        | 'concepts_approved'
+        | 'concepts_rejected',
+        number
+      >
+    >
+    const current = row[field] ?? 0
+    await supabase.from('daily_activity').update({ [field]: current + 1 }).eq('id', row.id)
   } else {
     await supabase.from('daily_activity').insert({
       user_id: userId,

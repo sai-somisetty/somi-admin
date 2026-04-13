@@ -1,7 +1,7 @@
 'use client'
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { getStoredUser } from '@/lib/auth'
+import { getHomeRoute, getStoredUser } from '@/lib/auth'
 
 export default function RootPage() {
   const router = useRouter()
@@ -10,10 +10,8 @@ export default function RootPage() {
     const user = getStoredUser()
     if (!user) {
       router.replace('/login')
-    } else if (user.role === 'admin') {
-      router.replace('/dashboard/review')
     } else {
-      router.replace('/dashboard/content')
+      router.replace(getHomeRoute(user.role))
     }
   }, [router])
 

@@ -51,6 +51,10 @@ export function getStoredUser(): AuthUser | null {
   }
 }
 
+export function getHomeRoute(role: AuthUser['role']): string {
+  return role === 'admin' ? '/dashboard/review' : '/dashboard/content'
+}
+
 export function requireAuth(): AuthUser {
   const user = getStoredUser()
   if (!user) {
