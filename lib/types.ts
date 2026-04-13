@@ -80,7 +80,7 @@ export interface Concept {
   order_index: number
   concept_title: string | null
   heading: string | null
-  content_type: 'text' | 'list' | 'table' | 'definition'
+  content_type: 'text' | 'list' | 'table' | 'definition' | 'image'
   text: string
   tenglish: string | null
   tenglish_variation_2: string | null

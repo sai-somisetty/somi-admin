@@ -1,216 +1,113 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
-import type { AuthUser, AdminUser, Paper, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
 import { acquireLock, releaseLock, incrementActivity } from '@/lib/concept-locks'
+import type { AuthUser, AdminUser, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
 
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false })
 
-interface TreeNode {
-  chapter: Chapter
-  subChapters: (SubChapter & { pages: ContentPage[] })[]
-  expanded: boolean
+// ─── Types ───────────────────────────────────────────────────────────────────
+interface ParagraphForm {
+  heading: string
+  text: string
+  content_type: 'text' | 'image'
+  image_url: string
 }
 
-interface PaperNode {
-  paper: Paper
-  chapters: TreeNode[]
-}
+const emptyForm: ParagraphForm = { heading: '', text: '', content_type: 'text', image_url: '' }
 
-interface AddPageTarget {
-  course_id: string
-  paper_number: number
-  chapter_number: number
-  sub_chapter_id: string
-  sub_chapter_title: string
-}
-
-interface ExamRubric {
-  must_keywords: string[]
-  bonus_keywords: string[]
-  min_points: number
-  format: string
-  marks: number
-  memory_trick: string
-  example_company: string
-  common_mistakes: string[]
-  model_answer_hints: string[]
-}
-
-interface GeneratedData {
-  tenglish: string
-  tenglish_variation_2: string
-  tenglish_variation_3: string
-  is_key_concept: boolean
-  kitty_question: string | null
-  mama_kitty_answer: string | null
-  check_question: string
-  check_options: string[]
-  check_answer: number
-  check_explanation: string
-  mama_response_correct: string
-  mama_response_wrong: string
-  exam_rubric: ExamRubric | null
-}
-
-const emptyAddPageForm = {
-  bookPage: '',
-  hasDiagram: false,
-  hasTable: false,
-}
-
-const emptyForm = {
-  concept_title: '',
-  content_type: 'text' as 'text' | 'list' | 'table' | 'definition',
-  heading: '',
-  text: '',
-  tenglish: '',
-  tenglish_variation_2: '',
-  tenglish_variation_3: '',
-  is_key_concept: false,
-  kitty_question: '',
-  mama_kitty_answer: '',
-  check_question: '',
-  option_a: '',
-  option_b: '',
-  option_c: '',
-  option_d: '',
-  check_answer: 0,
-  check_explanation: '',
-  mama_response_correct: '',
-  mama_response_wrong: '',
-  exam_rubric: null as ExamRubric | null,
-}
-
-type FormState = typeof emptyForm
-
+// ─── Main Component ──────────────────────────────────────────────────────────
 export default function ContentPage() {
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [tree, setTree] = useState<PaperNode[]>([])
-  const [expandedPapers, setExpandedPapers] = useState<Set<number>>(new Set([1]))
-  const [expandedChapters, setExpandedChapters] = useState<Set<string>>(new Set())
-  const [expandedSubs, setExpandedSubs] = useState<Set<string>>(new Set())
-  const [selectedPage, setSelectedPage] = useState<ContentPage | null>(null)
-  const [concepts, setConcepts] = useState<Concept[]>([])
-  const [showForm, setShowForm] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [form, setForm] = useState<FormState>(emptyForm)
-  const [saving, setSaving] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [selectedSubChapter, setSelectedSubChapter] = useState<AddPageTarget | null>(null)
-  const [addPageTarget, setAddPageTarget] = useState<AddPageTarget | null>(null)
-  const [addPageForm, setAddPageForm] = useState(emptyAddPageForm)
-  const [savingPage, setSavingPage] = useState(false)
-  const [addPageError, setAddPageError] = useState('')
-  const [generating, setGenerating] = useState(false)
-  const [generatedData, setGeneratedData] = useState<GeneratedData | null>(null)
-  const [currentVariation, setCurrentVariation] = useState<1 | 2 | 3>(1)
-  const [loadingStep, setLoadingStep] = useState(0)
-  const [lockHolder, setLockHolder] = useState<string | null>(null)
   const [userProfile, setUserProfile] = useState<AdminUser | null>(null)
-  const [expandedConcept, setExpandedConcept] = useState<string | null>(null)
 
-  const LOADING_STEPS = [
-    "⚡ Initialising SOMI-NLP-v4.1 kernel...",
-    "🔬 Tokenising ICMAI corpus vectors...",
-    "🧬 Running Telugu morphological parser...",
-    "📊 Cross-referencing CMA syllabus index...",
-    "🤖 Activating Tenglish transformer layer...",
-    "🗺️ Applying AP/TS regional dialect weights...",
-    "🧠 Generating semantic concept embeddings...",
-    "📐 Calibrating pedagogical difficulty score...",
-    "🔗 Injecting Mama persona attention weights...",
-    "✅ Compiling SOMI knowledge output...",
-  ]
-  const [showPageSelector, setShowPageSelector] = useState(false)
+  // Navigation data
+  const [chapters, setChapters] = useState<Chapter[]>([])
+  const [subChapters, setSubChapters] = useState<SubChapter[]>([])
+  const [pages, setPages] = useState<ContentPage[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // Current selection
+  const [selChapter, setSelChapter] = useState<number | null>(null)
+  const [selSubChapter, setSelSubChapter] = useState<string | null>(null)
+  const [selPage, setSelPage] = useState<ContentPage | null>(null)
+
+  // Paragraphs
+  const [paragraphs, setParagraphs] = useState<Concept[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [form, setForm] = useState<ParagraphForm>(emptyForm)
+  const [saving, setSaving] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [lockHolder, setLockHolder] = useState<string | null>(null)
+
+  // PDF
+  const [pdfPageOffset, setPdfPageOffset] = useState(0)
   const [pdfWidth, setPdfWidth] = useState(480)
   const [isDragging, setIsDragging] = useState(false)
-  const [pdfPageOffset, setPdfPageOffset] = useState(0)
 
+  // Image paste
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // ─── Load hierarchy ──────────────────────────────────────────────────────
   useEffect(() => {
     const u = getStoredUser()
     setUser(u)
-    loadTree()
     if (u) {
       supabase.from('admin_users').select('*').eq('id', u.id).single()
         .then(({ data }) => { if (data) setUserProfile(data as AdminUser) })
     }
+    loadHierarchy()
   }, [])
 
-  async function loadTree() {
+  async function loadHierarchy() {
     setLoading(true)
-    const [{ data: papers }, { data: chapters }, { data: subChapters }, { data: pages }] =
-      await Promise.all([
-        supabase.from('papers').select('*').eq('course_id', 'cma').order('paper_number'),
-        supabase.from('chapters').select('*').eq('course_id', 'cma').order('paper_number').order('chapter_number'),
-        supabase.from('sub_chapters').select('*').eq('course_id', 'cma').order('paper_number').order('chapter_number').order('sub_chapter_id'),
-        supabase.from('content_pages').select('*').eq('course_id', 'cma').order('paper_number').order('book_page'),
-      ])
-
-    const nodes: PaperNode[] = (papers || []).map(paper => ({
-      paper,
-      chapters: (chapters || [])
-        .filter(ch => ch.paper_number === paper.paper_number)
-        .map(ch => ({
-          chapter: ch,
-          expanded: false,
-          subChapters: (subChapters || [])
-            .filter(sc => sc.paper_number === paper.paper_number && sc.chapter_number === ch.chapter_number)
-            .map(sc => ({
-              ...sc,
-              pages: (pages || []).filter(
-                p => p.paper_number === paper.paper_number && p.chapter_number === ch.chapter_number && p.sub_chapter_id === sc.sub_chapter_id
-              ),
-            })),
-        })),
-    }))
-    setTree(nodes)
+    const [{ data: ch }, { data: sc }, { data: pg }] = await Promise.all([
+      supabase.from('chapters').select('*').eq('course_id', 'cma').order('chapter_number'),
+      supabase.from('sub_chapters').select('*').eq('course_id', 'cma').order('chapter_number').order('sub_chapter_id'),
+      supabase.from('content_pages').select('*').eq('course_id', 'cma').order('chapter_number').order('book_page'),
+    ])
+    setChapters(ch || [])
+    setSubChapters(sc || [])
+    setPages(pg || [])
     setLoading(false)
-  }
 
-  async function saveNewPage() {
-    if (!addPageTarget) return
-    const bookPage = parseInt(addPageForm.bookPage)
-    if (!bookPage || bookPage <= 0) {
-      setAddPageError('Please enter a valid book page number.')
-      return
-    }
-    setSavingPage(true)
-    setAddPageError('')
-    try {
-      const { error } = await supabase.from('content_pages').insert({
-        course_id: addPageTarget.course_id,
-        paper_number: addPageTarget.paper_number,
-        chapter_number: addPageTarget.chapter_number,
-        sub_chapter_id: addPageTarget.sub_chapter_id,
-        book_page: bookPage,
-        pdf_page: bookPage + 8,
-        has_diagram: addPageForm.hasDiagram,
-        has_table: addPageForm.hasTable,
-      })
-      if (error) throw error
-      setAddPageTarget(null)
-      setAddPageForm(emptyAddPageForm)
-      loadTree()
-    } catch (e: unknown) {
-      setAddPageError(e instanceof Error ? e.message : 'Failed to save page.')
-    } finally {
-      setSavingPage(false)
+    // Auto-select first chapter
+    if (ch && ch.length > 0) {
+      setSelChapter(ch[0].chapter_number)
     }
   }
 
-  function openAddPage(target: AddPageTarget, e?: React.MouseEvent) {
-    e?.stopPropagation()
-    setAddPageForm(emptyAddPageForm)
-    setAddPageError('')
-    setAddPageTarget(target)
-  }
+  // ─── Filtered lists for dropdowns ────────────────────────────────────────
+  const filteredSubChapters = subChapters.filter(sc =>
+    sc.chapter_number === selChapter
+  )
 
-  const loadConcepts = useCallback(async (page: ContentPage) => {
+  const filteredPages = pages.filter(p =>
+    p.chapter_number === selChapter &&
+    p.sub_chapter_id === selSubChapter
+  )
+
+  // Filter chapters for interns
+  const visibleChapters = (() => {
+    if (user?.role === 'intern' && userProfile?.assigned_chapters) {
+      const assigned = userProfile.assigned_chapters as number[]
+      if (assigned.length > 0) return chapters.filter(ch => assigned.includes(ch.chapter_number))
+    }
+    return chapters
+  })()
+
+  // Page navigation
+  const currentPageIndex = filteredPages.findIndex(p => p.id === selPage?.id)
+  const totalPages = filteredPages.length
+  const hasPrev = currentPageIndex > 0
+  const hasNext = currentPageIndex < totalPages - 1
+
+  // ─── Load paragraphs when page changes ───────────────────────────────────
+  const loadParagraphs = useCallback(async (page: ContentPage) => {
     const { data } = await supabase
       .from('concepts')
       .select('*')
@@ -220,278 +117,72 @@ export default function ContentPage() {
       .eq('sub_chapter_id', page.sub_chapter_id)
       .eq('book_page', page.book_page)
       .order('order_index')
-    setConcepts(data || [])
+    setParagraphs(data || [])
   }, [])
 
-  function selectPage(page: ContentPage) {
-    setSelectedPage(page)
-    loadConcepts(page)
-    setShowForm(false)
-    setEditingId(null)
-    setForm(emptyForm)
-    setGeneratedData(null)
-    setCurrentVariation(1)
-    setPdfPageOffset(0)
-    const parentSub = tree
-      .flatMap(p => p.chapters.flatMap(n => n.subChapters))
-      .find(s => s.paper_number === page.paper_number && s.chapter_number === page.chapter_number && s.sub_chapter_id === page.sub_chapter_id)
-    if (parentSub) {
-      setSelectedSubChapter({
-        course_id: page.course_id,
-        paper_number: page.paper_number,
-        chapter_number: page.chapter_number,
-        sub_chapter_id: page.sub_chapter_id,
-        sub_chapter_title: `${parentSub.sub_chapter_id} ${parentSub.title}`,
-      })
+  useEffect(() => {
+    if (selPage) {
+      loadParagraphs(selPage)
+      setPdfPageOffset(0)
+      setShowAddForm(false)
+      setEditingId(null)
+      setExpandedId(null)
+    } else {
+      setParagraphs([])
     }
-  }
+  }, [selPage, loadParagraphs])
 
-  function togglePaper(paperNum: number) {
-    setExpandedPapers(prev => {
-      const next = new Set(prev)
-      next.has(paperNum) ? next.delete(paperNum) : next.add(paperNum)
-      return next
-    })
-  }
-
-  function toggleChapter(paperNum: number, chNum: number) {
-    const key = `${paperNum}-${chNum}`
-    setExpandedChapters(prev => {
-      const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
-      return next
-    })
-  }
-
-  function toggleSub(key: string) {
-    setExpandedSubs(prev => {
-      const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
-      return next
-    })
-  }
-
-  async function startEdit(concept: Concept) {
-    if (user) {
-      const result = await acquireLock(concept.id, user.id)
-      if (!result.ok) {
-        setLockHolder(result.holder || 'Another user')
-        setTimeout(() => setLockHolder(null), 4000)
-        return
+  // Auto-select first sub-chapter when chapter changes
+  useEffect(() => {
+    if (selChapter) {
+      const subs = subChapters.filter(sc => sc.chapter_number === selChapter)
+      if (subs.length > 0) {
+        setSelSubChapter(subs[0].sub_chapter_id)
+      } else {
+        setSelSubChapter(null)
+        setSelPage(null)
       }
     }
-    const opts = concept.check_options as string[] | null
-    setForm({
-      concept_title: concept.concept_title || '',
-      content_type: concept.content_type,
-      heading: concept.heading || '',
-      text: concept.text,
-      tenglish: concept.tenglish || '',
-      tenglish_variation_2: concept.tenglish_variation_2 || '',
-      tenglish_variation_3: concept.tenglish_variation_3 || '',
-      is_key_concept: concept.is_key_concept,
-      kitty_question: concept.kitty_question || '',
-      mama_kitty_answer: concept.mama_kitty_answer || '',
-      check_question: concept.check_question || '',
-      option_a: opts?.[0] || '',
-      option_b: opts?.[1] || '',
-      option_c: opts?.[2] || '',
-      option_d: opts?.[3] || '',
-      check_answer: concept.check_answer ?? 0,
-      check_explanation: concept.check_explanation || '',
-      mama_response_correct: concept.mama_response_correct || '',
-      mama_response_wrong: concept.mama_response_wrong || '',
-      exam_rubric: concept.exam_rubric || null,
-    })
-    setEditingId(concept.id)
-    setGeneratedData(null)
-    setCurrentVariation(1)
-    setShowForm(true)
-  }
+  }, [selChapter, subChapters])
 
-  async function deleteConcept(id: string) {
-    if (!confirm('Delete this concept?')) return
-    await supabase.from('concepts').delete().eq('id', id)
-    if (selectedPage) loadConcepts(selectedPage)
-  }
+  // Auto-select first page when sub-chapter changes
+  useEffect(() => {
+    if (selChapter && selSubChapter) {
+      const pgs = pages.filter(p => p.chapter_number === selChapter && p.sub_chapter_id === selSubChapter)
+      if (pgs.length > 0) {
+        setSelPage(pgs[0])
+      } else {
+        setSelPage(null)
+      }
+    }
+  }, [selChapter, selSubChapter, pages])
 
-  async function moveConcept(id: string, direction: 'up' | 'down') {
-    const idx = concepts.findIndex(c => c.id === id)
-    if (idx < 0) return
-    const swapIdx = direction === 'up' ? idx - 1 : idx + 1
-    if (swapIdx < 0 || swapIdx >= concepts.length) return
-
-    const a = concepts[idx]
-    const b = concepts[swapIdx]
-
-    await Promise.all([
-      supabase.from('concepts').update({ order_index: b.order_index }).eq('id', a.id),
-      supabase.from('concepts').update({ order_index: a.order_index }).eq('id', b.id),
-    ])
-    if (selectedPage) loadConcepts(selectedPage)
-  }
-
-  async function moveToPage(conceptId: string, newBookPage: number) {
-    await supabase.from('concepts').update({
-      book_page: newBookPage,
-      updated_at: new Date().toISOString(),
-    }).eq('id', conceptId)
-    // Reload current page — the moved concept will disappear
-    if (selectedPage) loadConcepts(selectedPage)
-  }
-
-  function insertConceptAt(afterIndex: number) {
-    setForm(emptyForm)
-    setEditingId(null)
-    setGeneratedData(null)
-    setCurrentVariation(1)
-    setShowForm(true)
-  }
-
-  async function generateWithAI() {
-    if (!form.text.trim()) {
-      alert('Please paste ICMAI text first.')
+  // ─── Paragraph actions ───────────────────────────────────────────────────
+  async function saveParagraph() {
+    if (!selPage || !user) return
+    if (!form.text.trim() && !form.image_url) {
+      alert('Enter text or paste an image')
       return
     }
-
-    const chapterNode = selectedPage
-      ? tree
-          .flatMap(p => p.chapters)
-          .find(n =>
-            n.chapter.paper_number === selectedPage.paper_number &&
-            n.chapter.chapter_number === selectedPage.chapter_number
-          )?.chapter
-      : null
-
-    const subNode = selectedPage
-      ? tree
-          .flatMap(p => p.chapters.flatMap(n => n.subChapters))
-          .find(s =>
-            s.paper_number === selectedPage.paper_number &&
-            s.chapter_number === selectedPage.chapter_number &&
-            s.sub_chapter_id === selectedPage.sub_chapter_id
-          )
-      : null
-
-    setGenerating(true)
-    setLoadingStep(0)
-
-    const stepInterval = setInterval(() => {
-      setLoadingStep(prev =>
-        prev < LOADING_STEPS.length - 1 ? prev + 1 : prev
-      )
-    }, 800)
-
-    try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          icmai_text: form.text,
-          concept_title: form.concept_title,
-          chapter: chapterNode
-            ? `${chapterNode.chapter_number} — ${chapterNode.title}`
-            : '',
-          sub_chapter: subNode
-            ? `${subNode.sub_chapter_id} ${subNode.title}`
-            : '',
-        }),
-      })
-
-      const data = await res.json()
-      setGeneratedData(data)
-      setCurrentVariation(3)
-      if (user) incrementActivity(user.id, 'concepts_generated')
-      setForm(prev => ({
-        ...prev,
-        tenglish: data.tenglish || '',
-        tenglish_variation_2: data.tenglish_variation_2 || '',
-        tenglish_variation_3: data.tenglish_variation_3 || '',
-        is_key_concept: data.is_key_concept ?? prev.is_key_concept,
-        kitty_question: data.kitty_question || '',
-        mama_kitty_answer: data.mama_kitty_answer || '',
-        check_question: data.check_question || '',
-        option_a: data.check_options?.[0] || '',
-        option_b: data.check_options?.[1] || '',
-        option_c: data.check_options?.[2] || '',
-        option_d: data.check_options?.[3] || '',
-        check_answer: data.check_answer ?? 0,
-        check_explanation: data.check_explanation || '',
-        mama_response_correct: data.mama_response_correct || '',
-        mama_response_wrong: data.mama_response_wrong || '',
-        exam_rubric: data.exam_rubric || null,
-      }))
-    } catch (e) {
-      console.error(e)
-      alert('SOMI Engine error. Check API key.')
-    } finally {
-      clearInterval(stepInterval)
-      setLoadingStep(LOADING_STEPS.length - 1)
-      setTimeout(() => {
-        setGenerating(false)
-        setLoadingStep(0)
-      }, 600)
-    }
-  }
-
-  function switchVariation(v: 1 | 2 | 3) {
-    setForm(prev => {
-      const updated = { ...prev }
-      if (currentVariation === 1) updated.tenglish = prev.tenglish
-      else if (currentVariation === 2) updated.tenglish_variation_2 = prev.tenglish_variation_2
-      else updated.tenglish_variation_3 = prev.tenglish_variation_3
-      return updated
-    })
-    setCurrentVariation(v)
-  }
-
-  function getCurrentVariationText() {
-    if (currentVariation === 1) return form.tenglish
-    if (currentVariation === 2) return form.tenglish_variation_2
-    return form.tenglish_variation_3
-  }
-
-  function setCurrentVariationText(val: string) {
-    if (currentVariation === 1) setForm(p => ({ ...p, tenglish: val }))
-    else if (currentVariation === 2) setForm(p => ({ ...p, tenglish_variation_2: val }))
-    else setForm(p => ({ ...p, tenglish_variation_3: val }))
-  }
-
-  async function saveConcept(submitForReview: boolean) {
-    if (!selectedPage || !user) return
     setSaving(true)
     try {
       const payload = {
-        course_id: selectedPage.course_id,
-        paper_number: selectedPage.paper_number,
-        chapter_number: selectedPage.chapter_number,
-        sub_chapter_id: selectedPage.sub_chapter_id,
-        book_page: selectedPage.book_page,
+        course_id: selPage.course_id,
+        paper_number: selPage.paper_number,
+        chapter_number: selPage.chapter_number,
+        sub_chapter_id: selPage.sub_chapter_id,
+        book_page: selPage.book_page,
         order_index: editingId
-          ? concepts.find(c => c.id === editingId)?.order_index || 1
-          : concepts.length + 1,
-        concept_title: form.concept_title || null,
-        content_type: form.content_type,
+          ? paragraphs.find(p => p.id === editingId)?.order_index || paragraphs.length + 1
+          : paragraphs.length + 1,
+        concept_title: form.heading || null,
         heading: form.heading || null,
-        text: form.text,
-        tenglish: form.tenglish || null,
-        tenglish_variation_2: form.tenglish_variation_2 || null,
-        tenglish_variation_3: form.tenglish_variation_3 || null,
-        is_key_concept: form.is_key_concept,
-        kitty_question: form.is_key_concept ? form.kitty_question || null : null,
-        mama_kitty_answer: form.is_key_concept ? form.mama_kitty_answer || null : null,
-        check_question: form.check_question || null,
-        check_options: [form.option_a, form.option_b, form.option_c, form.option_d].filter(Boolean).length > 0
-          ? [form.option_a, form.option_b, form.option_c, form.option_d]
-          : null,
-        check_answer: form.check_answer,
-        check_explanation: form.check_explanation || null,
-        mama_response_correct: form.mama_response_correct || null,
-        mama_response_wrong: form.mama_response_wrong || null,
-        exam_rubric: form.exam_rubric || null,
+        content_type: form.content_type,
+        text: form.content_type === 'image' ? (form.image_url || '') : form.text,
+        is_key_concept: false,
         is_verified: false,
         needs_work: false,
-        review_status: submitForReview ? 'submitted' : 'draft',
+        review_status: 'draft',
         created_by: user.id,
         updated_at: new Date().toISOString(),
       }
@@ -504,1278 +195,557 @@ export default function ContentPage() {
       }
 
       await incrementActivity(user.id, 'concepts_entered')
-      if (submitForReview) await incrementActivity(user.id, 'concepts_submitted')
-
-      setShowForm(false)
-      setEditingId(null)
       setForm(emptyForm)
-      setGeneratedData(null)
-      loadConcepts(selectedPage)
+      setEditingId(null)
+      setShowAddForm(false)
+      loadParagraphs(selPage)
     } finally {
       setSaving(false)
     }
   }
 
-  const selectedSub = selectedPage
-    ? tree
-        .flatMap(p => p.chapters.flatMap(n => n.subChapters))
-        .find(s => s.paper_number === selectedPage.paper_number && s.sub_chapter_id === selectedPage.sub_chapter_id && s.chapter_number === selectedPage.chapter_number)
-    : null
-  const selectedChapter = selectedPage
-    ? tree.flatMap(p => p.chapters).find(n => n.chapter.paper_number === selectedPage.paper_number && n.chapter.chapter_number === selectedPage.chapter_number)?.chapter
-    : null
-
-  const handleDragStart = (e: React.MouseEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-
-    const startX = e.clientX
-    const startWidth = pdfWidth
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const diff = startX - e.clientX
-      const newWidth = Math.min(Math.max(startWidth + diff, 300), 900)
-      setPdfWidth(newWidth)
+  async function startEdit(para: Concept) {
+    if (user) {
+      const result = await acquireLock(para.id, user.id)
+      if (!result.ok) {
+        setLockHolder(result.holder || 'Another user')
+        setTimeout(() => setLockHolder(null), 4000)
+        return
+      }
     }
-
-    const handleMouseUp = () => {
-      setIsDragging(false)
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
+    setForm({
+      heading: para.heading || para.concept_title || '',
+      text: para.text || '',
+      content_type: (para.content_type as 'text' | 'image') || 'text',
+      image_url: para.content_type === 'image' ? para.text : '',
+    })
+    setEditingId(para.id)
+    setShowAddForm(true)
+    setExpandedId(null)
   }
 
-  const labelCls = 'block text-xs font-semibold mb-1'
-  const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all'
-  const textareaCls = `${inputCls} resize-none`
+  function cancelEdit() {
+    if (editingId && user) releaseLock(editingId, user.id)
+    setForm(emptyForm)
+    setEditingId(null)
+    setShowAddForm(false)
+  }
+
+  async function deleteParagraph(id: string) {
+    if (!confirm('Delete this paragraph?')) return
+    await supabase.from('concepts').delete().eq('id', id)
+    if (selPage) loadParagraphs(selPage)
+  }
+
+  async function moveParagraph(id: string, direction: 'up' | 'down') {
+    const idx = paragraphs.findIndex(p => p.id === id)
+    if (idx < 0) return
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (swapIdx < 0 || swapIdx >= paragraphs.length) return
+    const a = paragraphs[idx], b = paragraphs[swapIdx]
+    await Promise.all([
+      supabase.from('concepts').update({ order_index: b.order_index }).eq('id', a.id),
+      supabase.from('concepts').update({ order_index: a.order_index }).eq('id', b.id),
+    ])
+    if (selPage) loadParagraphs(selPage)
+  }
+
+  async function moveToPage(id: string) {
+    const newPage = prompt('Move to which book page number?')
+    if (!newPage || parseInt(newPage) <= 0) return
+    await supabase.from('concepts').update({
+      book_page: parseInt(newPage),
+      updated_at: new Date().toISOString(),
+    }).eq('id', id)
+    if (selPage) loadParagraphs(selPage)
+  }
+
+  // ─── Image paste handler ─────────────────────────────────────────────────
+  async function handlePaste(e: React.ClipboardEvent) {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (!file) return
+
+        setUploadingImage(true)
+        try {
+          const filename = `screenshots/${Date.now()}_${Math.random().toString(36).slice(2)}.png`
+          const { error } = await supabase.storage
+            .from('textbooks')
+            .upload(filename, file, { contentType: file.type })
+
+          if (error) {
+            alert('Image upload failed: ' + error.message)
+            return
+          }
+
+          const { data: urlData } = supabase.storage
+            .from('textbooks')
+            .getPublicUrl(filename)
+
+          setForm(prev => ({
+            ...prev,
+            content_type: 'image',
+            image_url: urlData.publicUrl,
+            text: '',
+          }))
+        } finally {
+          setUploadingImage(false)
+        }
+      }
+    }
+  }
+
+  // ─── Page navigation ─────────────────────────────────────────────────────
+  function goToPage(direction: 'prev' | 'next') {
+    const newIdx = direction === 'prev' ? currentPageIndex - 1 : currentPageIndex + 1
+    if (newIdx >= 0 && newIdx < filteredPages.length) {
+      setSelPage(filteredPages[newIdx])
+    }
+  }
+
+  // ─── Drag handle for PDF resize ──────────────────────────────────────────
+  function handleDragStart(e: React.MouseEvent) {
+    e.preventDefault()
+    setIsDragging(true)
+    const startX = e.clientX
+    const startWidth = pdfWidth
+    const onMove = (ev: MouseEvent) => {
+      setPdfWidth(Math.min(Math.max(startWidth + (startX - ev.clientX), 280), 800))
+    }
+    const onUp = () => {
+      setIsDragging(false)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  // ─── Get current sub-chapter + chapter info ──────────────────────────────
+  const currentChapter = chapters.find(ch => ch.chapter_number === selChapter)
+  const currentSubChapter = subChapters.find(sc => sc.chapter_number === selChapter && sc.sub_chapter_id === selSubChapter)
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center" style={{ background: 'var(--bg)' }}>
+        <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  const displayBookPage = selPage ? selPage.book_page + pdfPageOffset : 0
 
   return (
-    <>
-    <div style={{
-      display: 'flex',
-      height: '100vh',
-      overflow: 'hidden',
-      userSelect: isDragging ? 'none' : 'auto',
-    }}>
-      {/* Center pane */}
-      <div style={{ flex: 1, overflow: 'auto', minWidth: 400 }}>
-      <div className="flex h-full flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', userSelect: isDragging ? 'none' : 'auto' }}>
 
-        {/* Breadcrumb bar */}
-        <div className="px-5 py-2.5 border-b border-gray-200 bg-white shrink-0 flex items-center justify-between gap-4">
-          <p className="text-xs font-medium truncate" style={{ color: 'var(--muted)' }}>
-            {selectedPage ? (
-              <>
-                Paper {selectedPage.paper_number} › Chapter {selectedChapter?.chapter_number} ›{' '}
-                {selectedSub?.sub_chapter_id} {selectedSub?.title} ›{' '}
-                <span style={{ color: 'var(--accent)' }}>Page {selectedPage.book_page}</span>
-              </>
-            ) : (
-              <span>No page selected — click &ldquo;Change Page&rdquo; to browse</span>
-            )}
-          </p>
-          <button
-            onClick={() => setShowPageSelector(true)}
-            className="shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
-            style={{ color: 'var(--text)' }}
-          >
-            📂 Change Page
-          </button>
-        </div>
+      {/* ═══ LEFT: Content Entry Panel ═══ */}
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 400 }}>
 
-        {!selectedPage ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <span className="text-4xl">📄</span>
-              <p className="mt-3 font-medium" style={{ color: 'var(--text)' }}>
-                Select a page to start adding concepts
-              </p>
-              <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
-                Click &ldquo;Change Page&rdquo; above to browse chapters and pages
-              </p>
-              <button
-                onClick={() => setShowPageSelector(true)}
-                className="mt-5 inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold text-white cursor-pointer transition-opacity hover:opacity-90"
-                style={{ background: 'var(--accent)', boxShadow: '0 4px 20px rgba(230,126,34,0.35)' }}
-              >
-                📂 Browse Pages
+        {/* ── Navigation Bar ── */}
+        <div style={{
+          padding: '10px 16px',
+          background: 'white',
+          borderBottom: '1px solid #e5e7eb',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+        }}>
+          {/* Row 1: Dropdowns */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* Chapter dropdown */}
+            <select
+              value={selChapter || ''}
+              onChange={e => setSelChapter(parseInt(e.target.value) || null)}
+              style={dropdownStyle}
+            >
+              <option value="">Select Chapter</option>
+              {visibleChapters.map(ch => (
+                <option key={ch.chapter_number} value={ch.chapter_number}>
+                  Ch {ch.chapter_number}: {ch.title}
+                </option>
+              ))}
+            </select>
+
+            {/* Sub-chapter dropdown */}
+            <select
+              value={selSubChapter || ''}
+              onChange={e => setSelSubChapter(e.target.value || null)}
+              style={dropdownStyle}
+              disabled={!selChapter}
+            >
+              <option value="">Sub-chapter</option>
+              {filteredSubChapters.map(sc => (
+                <option key={sc.sub_chapter_id} value={sc.sub_chapter_id}>
+                  {sc.sub_chapter_id} {sc.title}
+                </option>
+              ))}
+            </select>
+
+            {/* Page dropdown */}
+            <select
+              value={selPage?.id || ''}
+              onChange={e => {
+                const pg = filteredPages.find(p => p.id === e.target.value)
+                if (pg) setSelPage(pg)
+              }}
+              style={{ ...dropdownStyle, width: 120 }}
+              disabled={!selSubChapter}
+            >
+              <option value="">Page</option>
+              {filteredPages.map(p => (
+                <option key={p.id} value={p.id}>Page {p.book_page}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Row 2: Page nav + breadcrumb */}
+          {selPage && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={() => goToPage('prev')} disabled={!hasPrev} style={navBtnStyle} className="disabled:opacity-30">
+                ← Prev
+              </button>
+              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>
+                Page {selPage.book_page} of {totalPages > 0 ? `${filteredPages[0]?.book_page}–${filteredPages[totalPages - 1]?.book_page}` : '—'}
+                <span style={{ marginLeft: 8, color: 'var(--text)', fontWeight: 600 }}>
+                  {currentSubChapter ? `${currentSubChapter.sub_chapter_id} ${currentSubChapter.title}` : ''}
+                </span>
+              </span>
+              <button onClick={() => goToPage('next')} disabled={!hasNext} style={navBtnStyle} className="disabled:opacity-30">
+                Next →
               </button>
             </div>
-          </div>
-        ) : (
-          <>
-            {/* Concepts list + form */}
-            <div className="flex-1 overflow-y-auto px-5 py-4">
+          )}
+        </div>
+
+        {/* ── Paragraph List ── */}
+        <div style={{ flex: 1, overflow: 'auto', padding: 16, background: 'var(--bg)' }}>
+          {!selPage ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+              <div style={{ textAlign: 'center' }}>
+                <span style={{ fontSize: 48 }}>📄</span>
+                <p style={{ color: 'var(--text)', fontWeight: 500, marginTop: 12 }}>Select a chapter, sub-chapter, and page to start</p>
+                <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 4 }}>Use the dropdowns above to navigate</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Lock warning */}
               {lockHolder && (
-                <div className="rounded-xl px-4 py-3 mb-3 flex items-center gap-2" style={{ background: '#FEF3C7', border: '1px solid #FDE68A' }}>
+                <div style={{ background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 8, padding: '8px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span>🔒</span>
-                  <span className="text-sm font-medium" style={{ color: '#92400E' }}>{lockHolder} is currently editing this concept. Try again shortly.</span>
+                  <span style={{ fontSize: 13, color: '#92400E' }}><strong>{lockHolder}</strong> is editing this paragraph</span>
                 </div>
               )}
 
-              {concepts.length === 0 && !showForm && (
-                <div className="rounded-xl border-2 border-dashed border-gray-200 p-8 text-center">
-                  <p className="text-sm font-medium" style={{ color: 'var(--muted)' }}>No concepts yet on this page</p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>Click &quot;Add Concept&quot; to start</p>
-                </div>
-              )}
+              {/* Paragraph count */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  {paragraphs.length} paragraph{paragraphs.length !== 1 ? 's' : ''} on this page
+                </span>
+              </div>
 
-              {/* Concept count header */}
-              {concepts.length > 0 && (
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium" style={{ color: 'var(--muted)' }}>
-                    {concepts.length} concept{concepts.length !== 1 ? 's' : ''} on this page
-                  </span>
-                  <button
-                    onClick={() => setExpandedConcept(null)}
-                    className="text-xs px-2 py-1 rounded hover:bg-gray-100 cursor-pointer"
-                    style={{ color: 'var(--muted)' }}
-                  >
-                    Collapse all
-                  </button>
-                </div>
-              )}
-
-              {concepts.map((concept, idx) => {
-                const isExpanded = expandedConcept === concept.id
-                const hasGenerated = !!concept.tenglish
+              {/* Paragraphs */}
+              {paragraphs.map((para, idx) => {
+                const isExpanded = expandedId === para.id
+                const isImage = para.content_type === 'image'
                 return (
-                  <div key={concept.id}>
-                    {/* Concept card — compact by default */}
+                  <div key={para.id} style={{
+                    background: 'white',
+                    border: isExpanded ? '1px solid var(--accent)' : '1px solid #e5e7eb',
+                    borderRadius: 8,
+                    marginBottom: 4,
+                    overflow: 'hidden',
+                  }}>
+                    {/* Compact row */}
                     <div
-                      className="rounded-lg shadow-sm mb-1 overflow-hidden"
+                      onClick={() => setExpandedId(isExpanded ? null : para.id)}
                       style={{
-                        background: 'var(--surface)',
-                        border: isExpanded ? '1px solid var(--accent)' : '1px solid #f0f0ec',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '8px 12px', cursor: 'pointer',
                       }}
                     >
-                      {/* Compact header — always visible */}
-                      <div
-                        className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-gray-50 transition-colors"
-                        onClick={() => setExpandedConcept(isExpanded ? null : concept.id)}
-                      >
-                        {/* Order number */}
-                        <span
-                          className="text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center shrink-0"
-                          style={{ background: '#0A2E28', color: 'white', fontSize: 10 }}
-                        >
-                          {concept.order_index}
-                        </span>
-
-                        {/* Title */}
-                        <span className="text-sm font-medium flex-1 truncate" style={{ color: 'var(--text)' }}>
-                          {concept.concept_title ? `P${concept.order_index} · ${concept.concept_title}` : `Paragraph ${concept.order_index}`}
-                        </span>
-
-                        {/* Status badge */}
-                        <ConceptStatusBadge concept={concept} />
-
-                        {/* Generated indicator */}
-                        {hasGenerated ? (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-green-50 text-green-600" title="Has Tenglish">🤖</span>
-                        ) : (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-gray-50 text-gray-400" title="No Tenglish yet">○</span>
-                        )}
-
-                        {/* Expand chevron */}
-                        <span className="text-xs shrink-0" style={{ color: 'var(--muted)' }}>
-                          {isExpanded ? '▲' : '▼'}
-                        </span>
-                      </div>
-
-                      {/* Expanded body */}
-                      {isExpanded && (
-                        <div className="border-t border-gray-100 px-3 py-3">
-                          {/* Text preview */}
-                          <div className="rounded-lg p-3 mb-3" style={{ background: '#f9fafb' }}>
-                            <p className="text-xs font-bold mb-1" style={{ color: 'var(--muted)' }}>ICMAI Text</p>
-                            <p className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>
-                              {concept.text}
-                            </p>
-                          </div>
-
-                          {/* Quick tenglish preview if generated */}
-                          {concept.tenglish && (
-                            <div className="rounded-lg p-3 mb-3" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
-                              <p className="text-xs font-bold mb-1" style={{ color: 'var(--accent)' }}>⚡ Quick (Tenglish)</p>
-                              <p className="text-sm" style={{ color: 'var(--text)' }}>{concept.tenglish}</p>
-                            </div>
-                          )}
-
-                          {/* MCQ preview if exists */}
-                          {concept.check_question && (
-                            <div className="rounded-lg p-2 mb-3" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-                              <p className="text-xs font-bold" style={{ color: '#16a34a' }}>❓ {concept.check_question}</p>
-                            </div>
-                          )}
-
-                          {/* Action buttons */}
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <button
-                              onClick={() => startEdit(concept)}
-                              className="text-xs px-3 py-1.5 rounded-lg font-medium text-white cursor-pointer"
-                              style={{ background: 'var(--accent)' }}
-                            >
-                              ✏️ Edit
-                            </button>
-                            <button
-                              onClick={() => moveConcept(concept.id, 'up')}
-                              disabled={idx === 0}
-                              className="text-xs px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer disabled:opacity-30"
-                              style={{ color: 'var(--text)' }}
-                            >
-                              ↑ Up
-                            </button>
-                            <button
-                              onClick={() => moveConcept(concept.id, 'down')}
-                              disabled={idx === concepts.length - 1}
-                              className="text-xs px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer disabled:opacity-30"
-                              style={{ color: 'var(--text)' }}
-                            >
-                              ↓ Down
-                            </button>
-                            <button
-                              onClick={() => {
-                                const newPage = prompt(`Move to which book page? (currently page ${concept.book_page})`)
-                                if (newPage && parseInt(newPage) > 0) moveToPage(concept.id, parseInt(newPage))
-                              }}
-                              className="text-xs px-2 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 cursor-pointer"
-                            >
-                              📄 Move to Page
-                            </button>
-                            <div className="flex-1" />
-                            <span className="text-xs" style={{ color: 'var(--muted)' }}>pg {concept.book_page}</span>
-                            <button
-                              onClick={() => deleteConcept(concept.id)}
-                              className="text-xs px-3 py-1.5 rounded-lg border border-red-100 text-red-500 hover:bg-red-50 cursor-pointer"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                      <span style={{
+                        width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: '#0A2E28', color: 'white', fontSize: 11, fontWeight: 700, flexShrink: 0,
+                      }}>
+                        {para.order_index}
+                      </span>
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {para.heading || para.concept_title || `Paragraph ${para.order_index}`}
+                      </span>
+                      {isImage && <span title="Image" style={{ fontSize: 12 }}>📷</span>}
+                      {para.tenglish && <span title="Generated" style={{ fontSize: 12 }}>🤖</span>}
+                      <StatusBadge concept={para} />
+                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>{isExpanded ? '▲' : '▼'}</span>
                     </div>
 
-                    {/* Insert between button — shows on hover */}
-                    {!showForm && (
-                      <div className="group flex items-center justify-center h-3 -my-0.5 relative">
-                        <button
-                          onClick={() => {
-                            setForm(emptyForm)
-                            setEditingId(null)
-                            setGeneratedData(null)
-                            setCurrentVariation(1)
-                            setShowForm(true)
-                          }}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity absolute text-xs px-2 py-0.5 rounded bg-orange-50 text-orange-500 font-medium cursor-pointer border border-orange-200 z-10"
-                          style={{ fontSize: 10 }}
-                        >
-                          + Insert here
-                        </button>
-                        <div className="w-full border-b border-transparent group-hover:border-orange-200 transition-colors" />
+                    {/* Expanded */}
+                    {isExpanded && (
+                      <div style={{ borderTop: '1px solid #f0f0ec', padding: 12 }}>
+                        {/* Text preview */}
+                        <div style={{ background: '#f9fafb', borderRadius: 6, padding: 10, marginBottom: 10, fontSize: 13, lineHeight: 1.6, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
+                          {isImage ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={para.text} alt="Screenshot" style={{ maxWidth: '100%', borderRadius: 6 }} />
+                          ) : (
+                            para.text
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <button onClick={() => startEdit(para)} style={actionBtn('#E67E22', 'white')}>✏️ Edit</button>
+                          <button onClick={() => moveParagraph(para.id, 'up')} disabled={idx === 0} style={actionBtn('#f3f4f6', 'var(--text)')}>↑</button>
+                          <button onClick={() => moveParagraph(para.id, 'down')} disabled={idx === paragraphs.length - 1} style={actionBtn('#f3f4f6', 'var(--text)')}>↓</button>
+                          <button onClick={() => moveToPage(para.id)} style={actionBtn('#eff6ff', '#2563eb')}>📄 Move</button>
+                          <div style={{ flex: 1 }} />
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>pg {para.book_page}</span>
+                          <button onClick={() => deleteParagraph(para.id)} style={actionBtn('#fef2f2', '#dc2626')}>Delete</button>
+                        </div>
                       </div>
                     )}
                   </div>
                 )
               })}
 
-              {!showForm && (
-                <button
-                  onClick={() => {
-                    setForm(emptyForm)
-                    setEditingId(null)
-                    setGeneratedData(null)
-                    setCurrentVariation(1)
-                    setShowForm(true)
-                  }}
-                  className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white mt-2 cursor-pointer"
-                  style={{ background: 'var(--accent)' }}
-                >
-                  <span>+</span> Add Concept to Page {selectedPage.book_page}
-                </button>
-              )}
+              {/* Add / Edit Form */}
+              {showAddForm ? (
+                <div style={{ background: 'white', border: '2px solid var(--accent)', borderRadius: 10, padding: 16, marginTop: 8 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>
+                    {editingId ? '✏️ Edit Paragraph' : '➕ New Paragraph'}
+                  </p>
 
-              {/* ── Concept Form ── */}
-              {showForm && (
-                <div
-                  className="rounded-xl shadow-sm p-5 mt-3"
-                  style={{ background: 'var(--surface)' }}
-                >
-                  <h3 className="text-sm font-bold mb-4" style={{ color: 'var(--text)' }}>
-                    {editingId ? 'Edit Concept' : 'New Concept'}
-                  </h3>
+                  {/* Heading */}
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={labelStyle}>Heading</label>
+                    <input
+                      value={form.heading}
+                      onChange={e => setForm(p => ({ ...p, heading: e.target.value }))}
+                      placeholder="e.g. Sources of Law, Introduction..."
+                      style={inputStyle}
+                      autoFocus
+                    />
+                  </div>
 
-                  <div className="space-y-5">
-                    {/* ── Section 1: CONTENT ── */}
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--accent)' }}>
-                        📖 Content
-                      </p>
-                      <div className="space-y-3">
-                        <div>
-                          <label className={labelCls} style={{ color: 'var(--text)' }}>
-                            📖 ICMAI Official Text <span className="text-red-500">*</span>
-                          </label>
-                          <textarea
-                            className={textareaCls}
-                            rows={6}
-                            value={form.text}
-                            onChange={e => setForm(p => ({ ...p, text: e.target.value }))}
-                            placeholder="Copy exact text from PDF →"
-                          />
-                          <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
-                            Tip: Select text from PDF viewer on the right
-                          </p>
-                        </div>
+                  {/* Content type toggle */}
+                  <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+                    <button
+                      onClick={() => setForm(p => ({ ...p, content_type: 'text', image_url: '' }))}
+                      style={{
+                        padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        background: form.content_type === 'text' ? 'var(--accent)' : '#f3f4f6',
+                        color: form.content_type === 'text' ? 'white' : 'var(--text)',
+                        border: 'none',
+                      }}
+                    >
+                      📝 Text
+                    </button>
+                    <button
+                      onClick={() => setForm(p => ({ ...p, content_type: 'image', text: '' }))}
+                      style={{
+                        padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        background: form.content_type === 'image' ? 'var(--accent)' : '#f3f4f6',
+                        color: form.content_type === 'image' ? 'white' : 'var(--text)',
+                        border: 'none',
+                      }}
+                    >
+                      📷 Image
+                    </button>
+                  </div>
 
-                        <div className="grid grid-cols-2 gap-3">
+                  {/* Text area or Image paste zone */}
+                  {form.content_type === 'text' ? (
+                    <div style={{ marginBottom: 10 }}>
+                      <label style={labelStyle}>Text (paste with formatting — lists/points preserved)</label>
+                      <textarea
+                        ref={textareaRef}
+                        value={form.text}
+                        onChange={e => setForm(p => ({ ...p, text: e.target.value }))}
+                        onPaste={handlePaste}
+                        placeholder="Paste textbook content here...&#10;• Point 1&#10;• Point 2&#10;• Point 3"
+                        rows={8}
+                        style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6 }}
+                      />
+                    </div>
+                  ) : (
+                    <div style={{ marginBottom: 10 }}>
+                      <label style={labelStyle}>Screenshot (Ctrl+V to paste image from clipboard)</label>
+                      <div
+                        onPaste={handlePaste}
+                        tabIndex={0}
+                        style={{
+                          border: '2px dashed #d1d5db', borderRadius: 8, padding: 24,
+                          textAlign: 'center', cursor: 'pointer', minHeight: 120,
+                          background: form.image_url ? 'white' : '#f9fafb',
+                          outline: 'none',
+                        }}
+                      >
+                        {uploadingImage ? (
                           <div>
-                            <label className={labelCls} style={{ color: 'var(--muted)' }}>Concept Title</label>
-                            <input
-                              className={inputCls}
-                              value={form.concept_title}
-                              onChange={e => setForm(p => ({ ...p, concept_title: e.target.value }))}
-                              placeholder="e.g. Definition of Law"
-                            />
+                            <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" style={{ margin: '0 auto 8px' }} />
+                            <p style={{ fontSize: 12, color: 'var(--muted)' }}>Uploading...</p>
                           </div>
+                        ) : form.image_url ? (
                           <div>
-                            <label className={labelCls} style={{ color: 'var(--muted)' }}>Content Type</label>
-                            <select
-                              className={inputCls}
-                              value={form.content_type}
-                              onChange={e => setForm(p => ({ ...p, content_type: e.target.value as FormState['content_type'] }))}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={form.image_url} alt="Pasted" style={{ maxWidth: '100%', maxHeight: 300, borderRadius: 6 }} />
+                            <button
+                              onClick={() => setForm(p => ({ ...p, image_url: '' }))}
+                              style={{ marginTop: 8, fontSize: 11, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer' }}
                             >
-                              <option value="text">Text</option>
-                              <option value="list">List</option>
-                              <option value="table">Table</option>
-                              <option value="definition">Definition</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className={labelCls} style={{ color: 'var(--muted)' }}>Heading (optional)</label>
-                          <input
-                            className={inputCls}
-                            value={form.heading}
-                            onChange={e => setForm(p => ({ ...p, heading: e.target.value }))}
-                            placeholder="Section heading"
-                          />
-                        </div>
-
-                        {generating ? (
-                          <div style={{
-                            background: '#0A2E28',
-                            borderRadius: 12,
-                            padding: '16px 20px',
-                            color: 'white',
-                            marginTop: 8,
-                          }}>
-                            <div style={{ marginBottom: 14 }}>
-                              {LOADING_STEPS.map((step, i) => (
-                                <div
-                                  key={i}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 8,
-                                    padding: '3px 0',
-                                    opacity: i <= loadingStep ? 1 : 0.25,
-                                    transition: 'opacity 0.4s ease',
-                                    fontSize: 11,
-                                    color: i < loadingStep
-                                      ? '#4ade80'
-                                      : i === loadingStep
-                                        ? '#ffffff'
-                                        : '#6b7280',
-                                  }}
-                                >
-                                  {i < loadingStep ? (
-                                    <span style={{
-                                      color: '#4ade80',
-                                      fontSize: 12,
-                                      minWidth: 12
-                                    }}>✓</span>
-                                  ) : i === loadingStep ? (
-                                    <span style={{
-                                      width: 8,
-                                      height: 8,
-                                      background: '#E67E22',
-                                      borderRadius: '50%',
-                                      display: 'inline-block',
-                                      flexShrink: 0,
-                                      animation: 'somipulse 0.8s ease-in-out infinite',
-                                    }}/>
-                                  ) : (
-                                    <span style={{
-                                      width: 8,
-                                      height: 8,
-                                      background: '#374151',
-                                      borderRadius: '50%',
-                                      display: 'inline-block',
-                                      flexShrink: 0,
-                                    }}/>
-                                  )}
-                                  <span>{step}</span>
-                                </div>
-                              ))}
-                            </div>
-
-                            <div style={{
-                              height: 3,
-                              background: '#1a4a3a',
-                              borderRadius: 2,
-                              overflow: 'hidden',
-                              marginBottom: 8,
-                            }}>
-                              <div style={{
-                                height: '100%',
-                                background: 'linear-gradient(90deg, #E67E22, #f59e0b)',
-                                borderRadius: 2,
-                                width: `${((loadingStep + 1) / LOADING_STEPS.length) * 100}%`,
-                                transition: 'width 0.5s ease',
-                              }}/>
-                            </div>
-
-                            <p style={{
-                              fontSize: 10,
-                              color: '#6b7280',
-                              textAlign: 'center',
-                              letterSpacing: '0.05em',
-                              textTransform: 'uppercase',
-                            }}>
-                              SOMI Engine v4.1 · Processing
-                            </p>
+                              Remove image
+                            </button>
                           </div>
                         ) : (
-                          <button
-                            onClick={generateWithAI}
-                            disabled={!form.text.trim()}
-                            style={{
-                              background: form.text.trim()
-                                ? 'linear-gradient(135deg, #0D9488, #0A2E28)'
-                                : '#9ca3af',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: 10,
-                              padding: '10px 20px',
-                              fontSize: 13,
-                              fontWeight: 700,
-                              cursor: form.text.trim() ? 'pointer' : 'not-allowed',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 6,
-                              transition: 'opacity 0.2s',
-                              marginTop: 8,
-                            }}
-                          >
-                            ⚡ Run SOMI Engine
-                          </button>
+                          <div>
+                            <span style={{ fontSize: 32 }}>📋</span>
+                            <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 8 }}>Click here, then Ctrl+V to paste screenshot</p>
+                          </div>
                         )}
                       </div>
                     </div>
+                  )}
 
-                    {/* ── Section 2: MAMA'S EXPLANATION ── */}
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--accent)' }}>
-                        🧠 Mama&apos;s Explanation
-                      </p>
-                      <label className={labelCls} style={{ color: 'var(--text)' }}>
-                        🧠 Mama&apos;s Tenglish
-                      </label>
-                      <div className="flex gap-1 mb-2">
-                        {([
-                          [1, '⚡ Quick'],
-                          [2, '📝 Revise'],
-                          [3, '📖 Master'],
-                        ] as const).map(([v, label]) => (
-                          <button
-                            key={v}
-                            onClick={() => switchVariation(v)}
-                            className="text-xs px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer"
-                            style={{
-                              background: currentVariation === v ? 'var(--accent)' : '#F3F4F6',
-                              color: currentVariation === v ? 'white' : 'var(--muted)',
-                            }}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                      <textarea
-                        className={textareaCls}
-                        rows={4}
-                        value={getCurrentVariationText()}
-                        onChange={e => setCurrentVariationText(e.target.value)}
-                        placeholder={generatedData ? '' : "Click 'Generate with AI' above first"}
-                      />
-                      {currentVariation === 3 && (
-                        <div style={{
-                          marginTop: 12,
-                          padding: 16,
-                          background: "#f9f9f9",
-                          borderRadius: 12,
-                          border: "1px solid #e0e0e0"
-                        }}>
-                          <div style={{ fontSize: 10, fontWeight: 700,
-                            color: "#666", marginBottom: 8 }}>
-                            PREVIEW
-                          </div>
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {form.tenglish_variation_3}
-                          </ReactMarkdown>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* ── Section 3: KITTY INTERACTION ── */}
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--accent)' }}>
-                        😺 Kitty Interaction
-                      </p>
-                      <div className="flex items-center gap-3 mb-3">
-                        <button
-                          type="button"
-                          onClick={() => setForm(p => ({ ...p, is_key_concept: !p.is_key_concept }))}
-                          className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer"
-                          style={{ background: form.is_key_concept ? 'var(--accent)' : '#d1d5db' }}
-                        >
-                          <span
-                            className="inline-block w-3.5 h-3.5 bg-white rounded-full transition-transform shadow-sm"
-                            style={{ transform: form.is_key_concept ? 'translateX(18px)' : 'translateX(2px)' }}
-                          />
-                        </button>
-                        <label
-                          className="text-sm font-medium cursor-pointer"
-                          style={{ color: 'var(--text)' }}
-                          onClick={() => setForm(p => ({ ...p, is_key_concept: !p.is_key_concept }))}
-                        >
-                          Is Key Concept?
-                        </label>
-                      </div>
-
-                      {form.is_key_concept && (
-                        <div className="space-y-3 pl-4 border-l-2 border-orange-200">
-                          <div>
-                            <label className={labelCls} style={{ color: 'var(--muted)' }}>😺 Kitty&apos;s Question</label>
-                            <textarea
-                              className={textareaCls}
-                              rows={2}
-                              value={form.kitty_question}
-                              onChange={e => setForm(p => ({ ...p, kitty_question: e.target.value }))}
-                              placeholder="What question would Kitty ask?"
-                            />
-                          </div>
-                          <div>
-                            <label className={labelCls} style={{ color: 'var(--muted)' }}>🧠 Mama&apos;s Answer to Kitty</label>
-                            <textarea
-                              className={textareaCls}
-                              rows={3}
-                              value={form.mama_kitty_answer}
-                              onChange={e => setForm(p => ({ ...p, mama_kitty_answer: e.target.value }))}
-                              placeholder="Mama's warm explanation..."
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* ── Section 4: CHECK QUESTION ── */}
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--accent)' }}>
-                        ❓ Check Question
-                      </p>
-                      <div className="space-y-3">
-                        <div>
-                          <label className={labelCls} style={{ color: 'var(--text)' }}>
-                            ❓ Check Question
-                          </label>
-                          <textarea
-                            className={textareaCls}
-                            rows={2}
-                            value={form.check_question}
-                            onChange={e => setForm(p => ({ ...p, check_question: e.target.value }))}
-                            placeholder="MCQ question text..."
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          {(['a', 'b', 'c', 'd'] as const).map((opt) => (
-                            <div key={opt}>
-                              <label className={labelCls} style={{ color: 'var(--muted)' }}>Option {opt.toUpperCase()}</label>
-                              <input
-                                className={inputCls}
-                                value={form[`option_${opt}` as keyof FormState] as string}
-                                onChange={e => setForm(p => ({ ...p, [`option_${opt}`]: e.target.value }))}
-                                placeholder={`Option ${opt.toUpperCase()}`}
-                              />
-                            </div>
-                          ))}
-                        </div>
-
-                        <div>
-                          <label className={labelCls} style={{ color: 'var(--muted)' }}>Correct Answer</label>
-                          <div className="flex gap-4">
-                            {['A', 'B', 'C', 'D'].map((opt, i) => (
-                              <label key={opt} className="flex items-center gap-1.5 cursor-pointer text-sm" style={{ color: 'var(--text)' }}>
-                                <input
-                                  type="radio"
-                                  name="check_answer"
-                                  checked={form.check_answer === i}
-                                  onChange={() => setForm(p => ({ ...p, check_answer: i }))}
-                                  className="accent-orange-500"
-                                />
-                                {opt}
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className={labelCls} style={{ color: 'var(--muted)' }}>Explanation</label>
-                          <textarea
-                            className={textareaCls}
-                            rows={2}
-                            value={form.check_explanation}
-                            onChange={e => setForm(p => ({ ...p, check_explanation: e.target.value }))}
-                            placeholder="Why is this the correct answer?"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* ── Section 5: MAMA RESPONSES ── */}
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--accent)' }}>
-                        💬 Mama Responses
-                      </p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className={labelCls} style={{ color: 'var(--muted)' }}>✅ When Correct</label>
-                          <textarea
-                            className={textareaCls}
-                            rows={3}
-                            value={form.mama_response_correct}
-                            onChange={e => setForm(p => ({ ...p, mama_response_correct: e.target.value }))}
-                            placeholder="Mama's warm response when correct..."
-                          />
-                        </div>
-                        <div>
-                          <label className={labelCls} style={{ color: 'var(--muted)' }}>❌ When Wrong</label>
-                          <textarea
-                            className={textareaCls}
-                            rows={3}
-                            value={form.mama_response_wrong}
-                            onChange={e => setForm(p => ({ ...p, mama_response_wrong: e.target.value }))}
-                            placeholder="Mama's reassuring response when wrong..."
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* ── Section 6: EXAM RUBRIC ── */}
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--accent)' }}>
-                        📊 Exam Rubric
-                      </p>
-                      <label className="block text-xs font-semibold mb-2" style={{ color: 'var(--muted)' }}>
-                        📊 Exam Rubric (Auto-generated)
-                      </label>
-                      {form.exam_rubric && (
-                        <div style={{
-                          background: '#f0fdf4',
-                          border: '1px solid #86efac',
-                          borderRadius: 8,
-                          padding: 12,
-                          fontSize: 11,
-                          fontFamily: 'monospace',
-                        }}>
-                          <p style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: '#15803d',
-                            marginBottom: 8
-                          }}>
-                            📊 Exam Rubric — Used by Exam Engine
-                          </p>
-
-                          <div style={{ marginBottom: 6 }}>
-                            <span style={{ color: '#15803d', fontWeight: 600 }}>
-                              Must Keywords:
-                            </span>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-                              {form.exam_rubric.must_keywords?.map((kw: string, i: number) => (
-                                <span key={i} style={{
-                                  background: '#dcfce7',
-                                  color: '#15803d',
-                                  padding: '2px 8px',
-                                  borderRadius: 4,
-                                  fontSize: 10,
-                                }}>
-                                  {kw}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div style={{ marginBottom: 6 }}>
-                            <span style={{ color: '#0369a1', fontWeight: 600 }}>
-                              Bonus Keywords:
-                            </span>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-                              {form.exam_rubric.bonus_keywords?.map((kw: string, i: number) => (
-                                <span key={i} style={{
-                                  background: '#dbeafe',
-                                  color: '#0369a1',
-                                  padding: '2px 8px',
-                                  borderRadius: 4,
-                                  fontSize: 10,
-                                }}>
-                                  {kw}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 1fr 1fr',
-                            gap: 8,
-                            marginBottom: 6
-                          }}>
-                            <div>
-                              <span style={{ color: '#6b7280', fontSize: 10 }}>Min Points</span>
-                              <p style={{ fontWeight: 700, color: '#1f2937' }}>
-                                {form.exam_rubric.min_points}
-                              </p>
-                            </div>
-                            <div>
-                              <span style={{ color: '#6b7280', fontSize: 10 }}>Format</span>
-                              <p style={{ fontWeight: 700, color: '#1f2937' }}>
-                                {form.exam_rubric.format}
-                              </p>
-                            </div>
-                            <div>
-                              <span style={{ color: '#6b7280', fontSize: 10 }}>Marks</span>
-                              <p style={{ fontWeight: 700, color: '#1f2937' }}>
-                                {form.exam_rubric.marks}
-                              </p>
-                            </div>
-                          </div>
-
-                          {form.exam_rubric.memory_trick && (
-                            <div style={{ marginBottom: 6 }}>
-                              <span style={{ color: '#7c3aed', fontWeight: 600 }}>
-                                🧠 Memory Trick:
-                              </span>
-                              <p style={{ color: '#7c3aed', fontSize: 11 }}>
-                                {form.exam_rubric.memory_trick}
-                              </p>
-                            </div>
-                          )}
-
-                          {form.exam_rubric.example_company && (
-                            <div style={{ marginBottom: 6 }}>
-                              <span style={{ color: '#92400e', fontWeight: 600 }}>
-                                🏢 Example Company:
-                              </span>
-                              <p style={{ color: '#92400e', fontSize: 11 }}>
-                                {form.exam_rubric.example_company}
-                              </p>
-                            </div>
-                          )}
-
-                          <div style={{ marginBottom: 6 }}>
-                            <span style={{ color: '#dc2626', fontWeight: 600 }}>
-                              Common Mistakes:
-                            </span>
-                            {form.exam_rubric.common_mistakes?.map((m: string, i: number) => (
-                              <p key={i} style={{
-                                color: '#dc2626',
-                                fontSize: 10,
-                                margin: '2px 0'
-                              }}>
-                                {i + 1}. {m}
-                              </p>
-                            ))}
-                          </div>
-
-                          <div>
-                            <span style={{ color: '#92400e', fontWeight: 600 }}>
-                              Answer Hints:
-                            </span>
-                            {form.exam_rubric.model_answer_hints?.map((h: string, i: number) => (
-                              <p key={i} style={{
-                                color: '#92400e',
-                                fontSize: 10,
-                                margin: '2px 0'
-                              }}>
-                                {(['Start:', 'Middle:', 'End:'] as const)[i]} {h}
-                              </p>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {!form.exam_rubric && (
-                        <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                          Run SOMI Engine to auto-generate exam rubric
-                        </p>
-                      )}
-                    </div>
-
-                    {/* ── Action buttons ── */}
-                    <div className="flex gap-3 pt-2 border-t border-gray-100">
-                      <button
-                        onClick={() => {
-                          if (editingId && user) releaseLock(editingId, user.id)
-                          setShowForm(false); setEditingId(null); setForm(emptyForm); setGeneratedData(null)
-                        }}
-                        className="rounded-lg px-4 py-2 text-sm border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
-                        style={{ color: 'var(--text)' }}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={() => saveConcept(false)}
-                        disabled={saving || !form.text}
-                        className="rounded-lg px-4 py-2 text-sm font-medium border border-gray-300 hover:bg-gray-50 transition-colors disabled:opacity-50 cursor-pointer"
-                        style={{ color: 'var(--text)' }}
-                      >
-                        {saving ? 'Saving...' : 'Save as Draft'}
-                      </button>
-                      <button
-                        onClick={() => saveConcept(true)}
-                        disabled={saving || !form.text}
-                        className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-opacity disabled:opacity-50 cursor-pointer"
-                        style={{ background: 'var(--accent)' }}
-                      >
-                        {saving ? 'Saving...' : 'Submit for Review'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-      </div>
-
-      {/* Drag handle */}
-      <div
-        onMouseDown={handleDragStart}
-        style={{
-          width: 6,
-          background: isDragging ? '#E67E22' : '#e5e7eb',
-          cursor: 'col-resize',
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'background 0.2s',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.background = '#E67E22' }}
-        onMouseLeave={e => { if (!isDragging) e.currentTarget.style.background = '#e5e7eb' }}
-      >
-        <div style={{
-          width: 2,
-          height: 40,
-          background: '#9ca3af',
-          borderRadius: 2,
-        }} />
-      </div>
-
-      {/* PDF pane */}
-      <div style={{
-        width: pdfWidth,
-        flexShrink: 0,
-        overflow: 'auto',
-        borderLeft: '1px solid #e5e7eb',
-        background: '#f9fafb',
-        display: 'flex',
-        flexDirection: 'column',
-      }}>
-        {selectedPage ? (() => {
-          const displayBookPage = selectedPage.book_page + pdfPageOffset
-          return (
-            <>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 12px',
-                background: '#f9fafb',
-                borderBottom: '1px solid #e5e7eb',
-                flexShrink: 0,
-              }}>
-                <button
-                  onClick={() => setPdfPageOffset(p => p - 1)}
-                  disabled={displayBookPage <= 1}
-                  style={{
-                    background: 'none',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 6,
-                    padding: '4px 10px',
-                    cursor: displayBookPage <= 1 ? 'not-allowed' : 'pointer',
-                    fontSize: 13,
-                    color: '#374151',
-                    opacity: displayBookPage <= 1 ? 0.4 : 1,
-                  }}
-                >
-                  ← Prev Page
-                </button>
-
-                <span style={{
-                  fontSize: 12,
-                  color: '#6b7280',
-                  fontWeight: 500,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4,
-                }}>
-                  Book Page {displayBookPage}
-                  {pdfPageOffset !== 0 && (
+                  {/* Buttons */}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={cancelEdit} style={actionBtn('#f3f4f6', 'var(--text)')}>Cancel</button>
                     <button
-                      onClick={() => setPdfPageOffset(0)}
+                      onClick={saveParagraph}
+                      disabled={saving || (!form.text.trim() && !form.image_url)}
                       style={{
-                        marginLeft: 4,
-                        fontSize: 10,
-                        color: '#E67E22',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        textDecoration: 'underline',
+                        ...actionBtn('var(--accent)', 'white'),
+                        opacity: saving || (!form.text.trim() && !form.image_url) ? 0.5 : 1,
                       }}
                     >
-                      Reset
+                      {saving ? 'Saving...' : editingId ? 'Update Paragraph' : 'Save Paragraph'}
                     </button>
-                  )}
-                </span>
-
+                  </div>
+                </div>
+              ) : (
                 <button
-                  onClick={() => setPdfPageOffset(p => p + 1)}
+                  onClick={() => { setForm(emptyForm); setEditingId(null); setShowAddForm(true) }}
                   style={{
-                    background: 'none',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 6,
-                    padding: '4px 10px',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    color: '#374151',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '10px 16px', marginTop: 8,
+                    background: 'var(--accent)', color: 'white',
+                    border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
                   }}
                 >
+                  + Add Paragraph
+                </button>
+              )}
+
+              {/* Bottom nav */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, paddingTop: 16, borderTop: '1px solid #e5e7eb' }}>
+                <button onClick={() => goToPage('prev')} disabled={!hasPrev} style={{ ...navBtnStyle, opacity: hasPrev ? 1 : 0.3 }}>
+                  ← Previous Page
+                </button>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  Page {selPage.book_page}
+                </span>
+                <button onClick={() => goToPage('next')} disabled={!hasNext} style={{ ...navBtnStyle, opacity: hasNext ? 1 : 0.3, background: hasNext ? 'var(--accent)' : '#f3f4f6', color: hasNext ? 'white' : 'var(--text)' }}>
                   Next Page →
                 </button>
               </div>
-              <div style={{ flex: 1, overflow: 'auto' }}>
-                <PDFViewer bookPage={displayBookPage} />
-              </div>
             </>
-          )
-        })() : (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            color: '#9ca3af',
-            fontSize: 14,
-          }}>
+          )}
+        </div>
+      </div>
+
+      {/* ═══ Drag Handle ═══ */}
+      <div
+        onMouseDown={handleDragStart}
+        style={{
+          width: 6, cursor: 'col-resize', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0, transition: isDragging ? 'none' : 'background 0.2s',
+        }}
+        onMouseEnter={e => { if (!isDragging) e.currentTarget.style.background = '#d1d5db' }}
+        onMouseLeave={e => { if (!isDragging) e.currentTarget.style.background = '#e5e7eb' }}
+      >
+        <div style={{ width: 2, height: 40, background: '#9ca3af', borderRadius: 2 }} />
+      </div>
+
+      {/* ═══ RIGHT: PDF Viewer ═══ */}
+      <div style={{ width: pdfWidth, flexShrink: 0, overflow: 'auto', borderLeft: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', flexDirection: 'column' }}>
+        {selPage ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', flexShrink: 0 }}>
+              <button
+                onClick={() => setPdfPageOffset(p => p - 1)}
+                disabled={displayBookPage <= 1}
+                style={{ ...navBtnStyle, opacity: displayBookPage <= 1 ? 0.3 : 1, fontSize: 12 }}
+              >
+                ← Prev Page
+              </button>
+              <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
+                Book Page {displayBookPage}
+                {pdfPageOffset !== 0 && (
+                  <button
+                    onClick={() => setPdfPageOffset(0)}
+                    style={{ marginLeft: 4, fontSize: 10, color: '#E67E22', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    Reset
+                  </button>
+                )}
+              </span>
+              <button onClick={() => setPdfPageOffset(p => p + 1)} style={{ ...navBtnStyle, fontSize: 12 }}>
+                Next Page →
+              </button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto' }}>
+              <PDFViewer bookPage={displayBookPage} />
+            </div>
+          </>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#9ca3af', fontSize: 14 }}>
             Select a page to see PDF
           </div>
         )}
       </div>
     </div>
-
-      {/* ── Modals (fixed-position, outside panel layout) ── */}
-      {/* ── Add Page Modal ── */}
-      {addPageTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) { setAddPageTarget(null); setAddPageError('') } }}
-        >
-          <div className="rounded-2xl p-7 w-96 shadow-2xl" style={{ background: 'var(--surface)' }}>
-            <div className="flex items-start justify-between mb-5">
-              <div>
-                <h2 className="text-base font-bold" style={{ color: 'var(--text)' }}>
-                  Add Page to {addPageTarget.sub_chapter_title}
-                </h2>
-              </div>
-              <button
-                onClick={() => { setAddPageTarget(null); setAddPageError('') }}
-                className="rounded-lg w-7 h-7 flex items-center justify-center text-base cursor-pointer hover:bg-gray-100 transition-colors"
-                style={{ color: 'var(--muted)' }}
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--muted)' }}>
-                Book Page Number
-              </label>
-              <input
-                type="number"
-                min={1}
-                autoFocus
-                value={addPageForm.bookPage}
-                onChange={(e) => setAddPageForm(f => ({ ...f, bookPage: e.target.value }))}
-                placeholder="e.g. 42"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all"
-                style={{ color: 'var(--text)' }}
-              />
-            </div>
-
-            <div className="mb-5">
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--muted)' }}>
-                PDF Page <span className="font-normal">(book page + 8, auto-calculated)</span>
-              </label>
-              <div
-                className="rounded-lg px-3 py-2.5 text-sm font-semibold"
-                style={{
-                  background: '#F5F0E8',
-                  color: parseInt(addPageForm.bookPage) > 0 ? 'var(--accent)' : '#C5B9A8',
-                  border: '1px solid #E5E0D8',
-                }}
-              >
-                {parseInt(addPageForm.bookPage) > 0 ? parseInt(addPageForm.bookPage) + 8 : '—'}
-              </div>
-            </div>
-
-            <div className="flex gap-6 mb-5">
-              {([
-                { key: 'hasDiagram', label: 'Has Diagram?' },
-                { key: 'hasTable', label: 'Has Table?' },
-              ] as const).map(({ key, label }) => (
-                <label key={key} className="flex items-center gap-2 text-sm font-medium cursor-pointer" style={{ color: 'var(--text)' }}>
-                  <input
-                    type="checkbox"
-                    checked={addPageForm[key]}
-                    onChange={(e) => setAddPageForm(f => ({ ...f, [key]: e.target.checked }))}
-                    className="w-4 h-4 cursor-pointer accent-orange-500"
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-
-            {addPageError && (
-              <div className="mb-4 px-3 py-2 rounded-lg text-xs" style={{ background: '#FEF2F2', color: '#DC2626' }}>
-                {addPageError}
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => { setAddPageTarget(null); setAddPageError('') }}
-                className="flex-1 rounded-xl py-2.5 text-sm border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
-                style={{ color: 'var(--text)' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveNewPage}
-                disabled={savingPage}
-                className="flex-[2] rounded-xl py-2.5 text-sm font-bold text-white transition-opacity disabled:opacity-60 cursor-pointer"
-                style={{ background: 'var(--accent)' }}
-              >
-                {savingPage ? 'Saving…' : 'Add Page'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Page Selector Modal ── */}
-      {showPageSelector && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowPageSelector(false) }}
-        >
-          <div
-            className="rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-            style={{ background: 'white', width: 600, maxHeight: '80vh' }}
-          >
-            {/* Modal header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
-              <div>
-                <h2 className="text-base font-bold" style={{ color: 'var(--text)' }}>Select Page</h2>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-                  {user?.role === 'intern' && userProfile?.assigned_chapters && (userProfile.assigned_chapters as number[]).length > 0
-                    ? `Your chapters: ${(userProfile.assigned_chapters as number[]).map(c => `Ch ${c}`).join(', ')}`
-                    : 'CMA Foundation — All Papers'}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowPageSelector(false)}
-                className="rounded-lg w-8 h-8 flex items-center justify-center text-lg cursor-pointer hover:bg-gray-100 transition-colors"
-                style={{ color: 'var(--muted)' }}
-              >
-                ×
-              </button>
-            </div>
-
-            {/* Tree */}
-            <div className="overflow-y-auto flex-1 py-2">
-              {loading ? (
-                <div className="flex items-center justify-center h-20">
-                  <div className="w-5 h-5 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
-                </div>
-              ) : (() => {
-                const assignedChs = userProfile?.assigned_chapters as number[] | undefined
-                const isIntern = user?.role === 'intern'
-                const filteredTree = isIntern && assignedChs && assignedChs.length > 0
-                  ? tree.map(pn => ({ ...pn, chapters: pn.chapters.filter(n => assignedChs.includes(n.chapter.chapter_number)) })).filter(pn => pn.chapters.length > 0)
-                  : tree
-                return filteredTree.map(paperNode => (
-                  <div key={paperNode.paper.paper_number}>
-                    {/* Paper row */}
-                    <button
-                      onClick={() => togglePaper(paperNode.paper.paper_number)}
-                      className="flex items-center gap-2 w-full px-4 py-3 text-left border-b border-gray-100 hover:bg-gray-100 transition-colors"
-                      style={{ background: '#F9FAFB' }}
-                    >
-                      <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                        {expandedPapers.has(paperNode.paper.paper_number) ? '▼' : '►'}
-                      </span>
-                      <span className="text-sm font-bold flex-1 leading-tight" style={{ color: 'var(--text)' }}>
-                        Paper {paperNode.paper.paper_number} — {paperNode.paper.title}
-                      </span>
-                    </button>
-
-                    {expandedPapers.has(paperNode.paper.paper_number) && paperNode.chapters.map(node => {
-                      const chKey = `${paperNode.paper.paper_number}-${node.chapter.chapter_number}`
-                      return (
-                        <div key={node.chapter.chapter_number}>
-                          <button
-                            onClick={() => toggleChapter(paperNode.paper.paper_number, node.chapter.chapter_number)}
-                            className="flex items-center gap-2 w-full px-5 py-2.5 text-left hover:bg-gray-50 transition-colors"
-                          >
-                            <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                              {expandedChapters.has(chKey) ? '▼' : '►'}
-                            </span>
-                            <span className="text-sm font-semibold flex-1 leading-tight" style={{ color: 'var(--text)' }}>
-                              Ch {node.chapter.chapter_number} — {node.chapter.title}
-                            </span>
-                            <StatusDot status={node.chapter.status} />
-                          </button>
-
-                          {expandedChapters.has(chKey) &&
-                            node.subChapters.map(sc => {
-                              const subKey = `${sc.paper_number}-${sc.chapter_number}-${sc.sub_chapter_id}`
-                              const subExpanded = expandedSubs.has(subKey)
-                              return (
-                                <div key={sc.sub_chapter_id}>
-                                  <div className="flex items-center group">
-                                    <button
-                                      onClick={() => toggleSub(subKey)}
-                                      className="flex items-center gap-2 flex-1 pl-10 pr-2 py-2 text-left hover:bg-gray-50 transition-colors"
-                                    >
-                                      <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                                        {subExpanded ? '▼' : '►'}
-                                      </span>
-                                      <span className="text-sm flex-1 leading-tight" style={{ color: 'var(--muted)' }}>
-                                        {sc.sub_chapter_id} {sc.title}
-                                      </span>
-                                    </button>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        setShowPageSelector(false)
-                                        openAddPage({
-                                          course_id: sc.course_id,
-                                          paper_number: sc.paper_number,
-                                          chapter_number: sc.chapter_number,
-                                          sub_chapter_id: sc.sub_chapter_id,
-                                          sub_chapter_title: `${sc.sub_chapter_id} ${sc.title}`,
-                                        })
-                                      }}
-                                      title="Add a page to this sub-chapter"
-                                      className="shrink-0 mr-4 text-xs px-2 py-1 rounded font-semibold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                                      style={{ background: '#FEF3E8', color: 'var(--accent)' }}
-                                    >
-                                      + Add Page
-                                    </button>
-                                  </div>
-
-                                  {subExpanded && sc.pages.map(pg => {
-                                    const isActive = selectedPage?.id === pg.id
-                                    return (
-                                      <button
-                                        key={pg.id}
-                                        onClick={() => {
-                                          selectPage(pg)
-                                          setShowPageSelector(false)
-                                        }}
-                                        className="flex items-center gap-2 w-full pl-16 pr-5 py-2 text-left transition-colors hover:bg-orange-50"
-                                        style={{
-                                          background: isActive ? '#FEF3E8' : undefined,
-                                          borderLeft: isActive ? '3px solid var(--accent)' : '3px solid transparent',
-                                        }}
-                                      >
-                                        <span className="text-xs">📄</span>
-                                        <span
-                                          className="text-sm flex-1"
-                                          style={{ color: isActive ? 'var(--accent)' : 'var(--text)', fontWeight: isActive ? 600 : 400 }}
-                                        >
-                                          Page {pg.book_page}
-                                        </span>
-                                        <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                                          {pg.total_concepts > 0 ? `${pg.total_concepts} concepts` : '0 concepts'}
-                                        </span>
-                                      </button>
-                                    )
-                                  })}
-                                  {subExpanded && sc.pages.length === 0 && (
-                                    <p className="pl-16 pr-5 py-2 text-xs" style={{ color: 'var(--muted)' }}>
-                                      No pages yet — hover sub-chapter to add
-                                    </p>
-                                  )}
-                                </div>
-                              )
-                            })}
-                        </div>
-                      )
-                    })}
-                  </div>
-                ))
-              })()}
-            </div>
-          </div>
-        </div>
-      )}
-    </>
   )
 }
 
-function StatusDot({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    draft: '#9ca3af',
-    in_progress: '#f59e0b',
-    verified: '#16a34a',
-  }
-  return (
-    <span
-      className="w-2 h-2 rounded-full shrink-0"
-      style={{ background: colors[status] || '#9ca3af' }}
-    />
-  )
+// ─── Status Badge ────────────────────────────────────────────────────────────
+function StatusBadge({ concept }: { concept: Concept }) {
+  if (concept.is_verified || concept.review_status === 'approved')
+    return <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 99, background: '#dcfce7', color: '#16a34a', fontWeight: 600 }}>Verified</span>
+  if (concept.review_status === 'submitted')
+    return <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 99, background: '#dbeafe', color: '#2563eb', fontWeight: 600 }}>Submitted</span>
+  if (concept.needs_work || concept.review_status === 'rejected')
+    return <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 99, background: '#fee2e2', color: '#dc2626', fontWeight: 600 }}>Needs Work</span>
+  return <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 99, background: '#fef3c7', color: '#d97706', fontWeight: 600 }}>Draft</span>
 }
 
-function ConceptStatusBadge({ concept }: { concept: Concept }) {
-  if (concept.is_verified || concept.review_status === 'approved') {
-    return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Verified</span>
+// ─── Styles ──────────────────────────────────────────────────────────────────
+const dropdownStyle: React.CSSProperties = {
+  flex: 1, padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 6,
+  fontSize: 12, color: '#1A1208', background: 'white', outline: 'none', cursor: 'pointer',
+  minWidth: 0,
+}
+
+const navBtnStyle: React.CSSProperties = {
+  padding: '5px 12px', background: '#f3f4f6', border: '1px solid #e5e7eb',
+  borderRadius: 6, fontSize: 12, cursor: 'pointer', color: '#374151', whiteSpace: 'nowrap',
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%', padding: '8px 10px', border: '1px solid #e5e7eb', borderRadius: 6,
+  fontSize: 13, outline: 'none', color: 'var(--text)', boxSizing: 'border-box',
+}
+
+const labelStyle: React.CSSProperties = {
+  display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginBottom: 4,
+}
+
+function actionBtn(bg: string, color: string): React.CSSProperties {
+  return {
+    padding: '5px 12px', background: bg, color, border: 'none',
+    borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap',
   }
-  if (concept.review_status === 'submitted') {
-    return <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">Submitted</span>
-  }
-  if (concept.needs_work || concept.review_status === 'rejected') {
-    return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">Needs Work</span>
-  }
-  return <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 font-medium">Draft</span>
 }
