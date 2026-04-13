@@ -331,6 +331,15 @@ export default function ContentPage() {
     if (selectedPage) loadConcepts(selectedPage)
   }
 
+  async function moveToPage(conceptId: string, newBookPage: number) {
+    await supabase.from('concepts').update({
+      book_page: newBookPage,
+      updated_at: new Date().toISOString(),
+    }).eq('id', conceptId)
+    // Reload current page — the moved concept will disappear
+    if (selectedPage) loadConcepts(selectedPage)
+  }
+
   function insertConceptAt(afterIndex: number) {
     setForm(emptyForm)
     setEditingId(null)
@@ -658,7 +667,7 @@ export default function ContentPage() {
 
                         {/* Title */}
                         <span className="text-sm font-medium flex-1 truncate" style={{ color: 'var(--text)' }}>
-                          {concept.concept_title || 'Untitled concept'}
+                          {concept.concept_title ? `P${concept.order_index} · ${concept.concept_title}` : `Paragraph ${concept.order_index}`}
                         </span>
 
                         {/* Status badge */}
@@ -728,7 +737,17 @@ export default function ContentPage() {
                             >
                               ↓ Down
                             </button>
+                            <button
+                              onClick={() => {
+                                const newPage = prompt(`Move to which book page? (currently page ${concept.book_page})`)
+                                if (newPage && parseInt(newPage) > 0) moveToPage(concept.id, parseInt(newPage))
+                              }}
+                              className="text-xs px-2 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 cursor-pointer"
+                            >
+                              📄 Move to Page
+                            </button>
                             <div className="flex-1" />
+                            <span className="text-xs" style={{ color: 'var(--muted)' }}>pg {concept.book_page}</span>
                             <button
                               onClick={() => deleteConcept(concept.id)}
                               className="text-xs px-3 py-1.5 rounded-lg border border-red-100 text-red-500 hover:bg-red-50 cursor-pointer"
