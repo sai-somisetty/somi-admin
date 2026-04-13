@@ -235,7 +235,7 @@ export default function ContentPage() {
         chapter_number: selChapter,
         sub_chapter_id: selSubChapter,
         book_page: selBookPage,
-        pdf_page: selBookPage + 12,
+        pdf_page: selBookPage + 8,
         status: 'in_progress',
       }, { onConflict: 'course_id,paper_number,chapter_number,book_page' })
 
