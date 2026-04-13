@@ -36,7 +36,7 @@ export default function ContentPage() {
   const [selPaper, setSelPaper] = useState<number | null>(null)
   const [selChapter, setSelChapter] = useState<number | null>(null)
   const [selSubChapter, setSelSubChapter] = useState<string | null>(null)
-  const [selPage, setSelPage] = useState<ContentPage | null>(null)
+  const [selBookPage, setSelBookPage] = useState<number | null>(null)
 
   // Paragraphs
   const [paragraphs, setParagraphs] = useState<Concept[]>([])
@@ -112,6 +112,18 @@ export default function ContentPage() {
     p.sub_chapter_id === selSubChapter
   )
 
+  // Compute page range from sub-chapter start/end
+  const currentSubChapter = subChapters.find(sc =>
+    sc.course_id === selCourse && sc.paper_number === selPaper &&
+    sc.chapter_number === selChapter && sc.sub_chapter_id === selSubChapter
+  )
+  const pageRange: number[] = []
+  if (currentSubChapter?.start_book_page && currentSubChapter?.end_book_page) {
+    for (let i = currentSubChapter.start_book_page; i <= currentSubChapter.end_book_page; i++) {
+      pageRange.push(i)
+    }
+  }
+
   // Filter chapters for interns
   const visibleChapters = (() => {
     if (user?.role === 'intern' && userProfile?.assigned_chapters) {
@@ -122,28 +134,28 @@ export default function ContentPage() {
   })()
 
   // Page navigation
-  const currentPageIndex = filteredPages.findIndex(p => p.id === selPage?.id)
-  const totalPages = filteredPages.length
+  const currentPageIndex = selBookPage ? pageRange.indexOf(selBookPage) : -1
+  const totalPages = pageRange.length
   const hasPrev = currentPageIndex > 0
   const hasNext = currentPageIndex < totalPages - 1
 
   // ─── Load paragraphs when page changes ───────────────────────────────────
-  const loadParagraphs = useCallback(async (page: ContentPage) => {
+  const loadParagraphs = useCallback(async (courseId: string, paperNum: number, chapterNum: number, subChapterId: string, bookPage: number) => {
     const { data } = await supabase
       .from('concepts')
       .select('*')
-      .eq('course_id', page.course_id)
-      .eq('paper_number', page.paper_number)
-      .eq('chapter_number', page.chapter_number)
-      .eq('sub_chapter_id', page.sub_chapter_id)
-      .eq('book_page', page.book_page)
+      .eq('course_id', courseId)
+      .eq('paper_number', paperNum)
+      .eq('chapter_number', chapterNum)
+      .eq('sub_chapter_id', subChapterId)
+      .eq('book_page', bookPage)
       .order('order_index')
     setParagraphs(data || [])
   }, [])
 
   useEffect(() => {
-    if (selPage) {
-      loadParagraphs(selPage)
+    if (selCourse && selPaper && selChapter && selSubChapter && selBookPage) {
+      loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
       setPdfPageOffset(0)
       setShowAddForm(false)
       setEditingId(null)
@@ -151,7 +163,7 @@ export default function ContentPage() {
     } else {
       setParagraphs([])
     }
-  }, [selPage, loadParagraphs])
+  }, [selCourse, selPaper, selChapter, selSubChapter, selBookPage, loadParagraphs])
 
   // Auto-select first paper when course changes
   useEffect(() => {
@@ -163,7 +175,7 @@ export default function ContentPage() {
         setSelPaper(null)
         setSelChapter(null)
         setSelSubChapter(null)
-        setSelPage(null)
+        setSelBookPage(null)
       }
     }
   }, [selCourse, papers])
@@ -177,7 +189,7 @@ export default function ContentPage() {
       } else {
         setSelChapter(null)
         setSelSubChapter(null)
-        setSelPage(null)
+        setSelBookPage(null)
       }
     }
   }, [selPaper, selCourse, chapters])
@@ -190,7 +202,7 @@ export default function ContentPage() {
         setSelSubChapter(subs[0].sub_chapter_id)
       } else {
         setSelSubChapter(null)
-        setSelPage(null)
+        setSelBookPage(null)
       }
     }
   }, [selChapter, selPaper, selCourse, subChapters])
@@ -198,30 +210,41 @@ export default function ContentPage() {
   // Auto-select first page when sub-chapter changes
   useEffect(() => {
     if (selCourse && selPaper && selChapter && selSubChapter) {
-      const pgs = pages.filter(p => p.course_id === selCourse && p.paper_number === selPaper && p.chapter_number === selChapter && p.sub_chapter_id === selSubChapter)
-      if (pgs.length > 0) {
-        setSelPage(pgs[0])
+      const sc = subChapters.find(s => s.course_id === selCourse && s.paper_number === selPaper && s.chapter_number === selChapter && s.sub_chapter_id === selSubChapter)
+      if (sc?.start_book_page) {
+        setSelBookPage(sc.start_book_page)
       } else {
-        setSelPage(null)
+        setSelBookPage(null)
       }
     }
-  }, [selChapter, selSubChapter, selPaper, selCourse, pages])
+  }, [selChapter, selSubChapter, selPaper, selCourse, subChapters])
 
   // ─── Paragraph actions ───────────────────────────────────────────────────
   async function saveParagraph() {
-    if (!selPage || !user) return
+    if (!selCourse || !selPaper || !selChapter || !selSubChapter || !selBookPage || !user) return
     if (!form.text.trim() && !form.image_url) {
       alert('Enter text or paste an image')
       return
     }
     setSaving(true)
     try {
+      // Auto-create content_pages entry if it doesn't exist
+      await supabase.from('content_pages').upsert({
+        course_id: selCourse,
+        paper_number: selPaper,
+        chapter_number: selChapter,
+        sub_chapter_id: selSubChapter,
+        book_page: selBookPage,
+        pdf_page: selBookPage + 8,
+        status: 'in_progress',
+      }, { onConflict: 'course_id,paper_number,chapter_number,book_page' })
+
       const payload = {
-        course_id: selPage.course_id,
-        paper_number: selPage.paper_number,
-        chapter_number: selPage.chapter_number,
-        sub_chapter_id: selPage.sub_chapter_id,
-        book_page: selPage.book_page,
+        course_id: selCourse,
+        paper_number: selPaper,
+        chapter_number: selChapter,
+        sub_chapter_id: selSubChapter,
+        book_page: selBookPage,
         order_index: editingId
           ? paragraphs.find(p => p.id === editingId)?.order_index || paragraphs.length + 1
           : paragraphs.length + 1,
@@ -248,9 +271,15 @@ export default function ContentPage() {
       setForm(emptyForm)
       setEditingId(null)
       setShowAddForm(false)
-      loadParagraphs(selPage)
+      reloadCurrentPage()
     } finally {
       setSaving(false)
+    }
+  }
+
+  function reloadCurrentPage() {
+    if (selCourse && selPaper && selChapter && selSubChapter && selBookPage) {
+      loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
     }
   }
 
@@ -284,7 +313,7 @@ export default function ContentPage() {
   async function deleteParagraph(id: string) {
     if (!confirm('Delete this paragraph?')) return
     await supabase.from('concepts').delete().eq('id', id)
-    if (selPage) loadParagraphs(selPage)
+    reloadCurrentPage()
   }
 
   async function moveParagraph(id: string, direction: 'up' | 'down') {
@@ -297,7 +326,7 @@ export default function ContentPage() {
       supabase.from('concepts').update({ order_index: b.order_index }).eq('id', a.id),
       supabase.from('concepts').update({ order_index: a.order_index }).eq('id', b.id),
     ])
-    if (selPage) loadParagraphs(selPage)
+    reloadCurrentPage()
   }
 
   async function moveToPage(id: string) {
@@ -307,7 +336,7 @@ export default function ContentPage() {
       book_page: parseInt(newPage),
       updated_at: new Date().toISOString(),
     }).eq('id', id)
-    if (selPage) loadParagraphs(selPage)
+    reloadCurrentPage()
   }
 
   // ─── Image paste handler ─────────────────────────────────────────────────
@@ -353,8 +382,8 @@ export default function ContentPage() {
   // ─── Page navigation ─────────────────────────────────────────────────────
   function goToPage(direction: 'prev' | 'next') {
     const newIdx = direction === 'prev' ? currentPageIndex - 1 : currentPageIndex + 1
-    if (newIdx >= 0 && newIdx < filteredPages.length) {
-      setSelPage(filteredPages[newIdx])
+    if (newIdx >= 0 && newIdx < pageRange.length) {
+      setSelBookPage(pageRange[newIdx])
     }
   }
 
@@ -376,10 +405,6 @@ export default function ContentPage() {
     document.addEventListener('mouseup', onUp)
   }
 
-  // ─── Get current sub-chapter + chapter info ──────────────────────────────
-  const currentChapter = chapters.find(ch => ch.chapter_number === selChapter)
-  const currentSubChapter = subChapters.find(sc => sc.chapter_number === selChapter && sc.sub_chapter_id === selSubChapter)
-
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center" style={{ background: 'var(--bg)' }}>
@@ -388,7 +413,7 @@ export default function ContentPage() {
     )
   }
 
-  const displayBookPage = selPage ? selPage.book_page + pdfPageOffset : 0
+  const displayBookPage = selBookPage ? selBookPage + pdfPageOffset : 0
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', userSelect: isDragging ? 'none' : 'auto' }}>
@@ -468,29 +493,26 @@ export default function ContentPage() {
 
             {/* Page dropdown */}
             <select
-              value={selPage?.id || ''}
-              onChange={e => {
-                const pg = filteredPages.find(p => p.id === e.target.value)
-                if (pg) setSelPage(pg)
-              }}
+              value={selBookPage || ''}
+              onChange={e => setSelBookPage(parseInt(e.target.value) || null)}
               style={{ ...dropdownStyle, width: 120 }}
               disabled={!selSubChapter}
             >
               <option value="">Page</option>
-              {filteredPages.map(p => (
-                <option key={p.id} value={p.id}>Page {p.book_page}</option>
+              {pageRange.map(pg => (
+                <option key={pg} value={pg}>Page {pg}</option>
               ))}
             </select>
           </div>
 
           {/* Row 2: Page nav + breadcrumb */}
-          {selPage && (
+          {selBookPage && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button onClick={() => goToPage('prev')} disabled={!hasPrev} style={navBtnStyle} className="disabled:opacity-30">
                 ← Prev
               </button>
               <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>
-                Page {selPage.book_page} of {totalPages > 0 ? `${filteredPages[0]?.book_page}–${filteredPages[totalPages - 1]?.book_page}` : '—'}
+                Page {selBookPage} of {pageRange.length > 0 ? `${pageRange[0]}–${pageRange[pageRange.length - 1]}` : '—'}
                 <span style={{ marginLeft: 8, color: 'var(--text)', fontWeight: 600 }}>
                   {currentSubChapter ? `${currentSubChapter.sub_chapter_id} ${currentSubChapter.title}` : ''}
                 </span>
@@ -504,7 +526,7 @@ export default function ContentPage() {
 
         {/* ── Paragraph List ── */}
         <div style={{ flex: 1, overflow: 'auto', padding: 16, background: 'var(--bg)' }}>
-          {!selPage ? (
+          {!selBookPage ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
               <div style={{ textAlign: 'center' }}>
                 <span style={{ fontSize: 48 }}>📄</span>
@@ -726,7 +748,7 @@ export default function ContentPage() {
                   ← Previous Page
                 </button>
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  Page {selPage.book_page}
+                  Page {selBookPage}
                 </span>
                 <button onClick={() => goToPage('next')} disabled={!hasNext} style={{ ...navBtnStyle, opacity: hasNext ? 1 : 0.3, background: hasNext ? 'var(--accent)' : '#f3f4f6', color: hasNext ? 'white' : 'var(--text)' }}>
                   Next Page →
@@ -752,7 +774,7 @@ export default function ContentPage() {
 
       {/* ═══ RIGHT: PDF Viewer ═══ */}
       <div style={{ width: pdfWidth, flexShrink: 0, overflow: 'auto', borderLeft: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', flexDirection: 'column' }}>
-        {selPage ? (
+        {selBookPage ? (
           <>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', flexShrink: 0 }}>
               <button
