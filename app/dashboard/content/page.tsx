@@ -804,7 +804,7 @@ export default function ContentPage() {
               </button>
             </div>
             <div style={{ flex: 1, overflow: 'auto' }}>
-              <PDFViewer bookPage={displayBookPage} />
+              <PDFViewer bookPage={displayBookPage} pdfUrl={papers.find(p => p.course_id === selCourse && p.paper_number === selPaper)?.pdf_url || undefined} />
             </div>
           </>
         ) : (
