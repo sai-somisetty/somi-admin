@@ -226,8 +226,47 @@ function ConceptCard({
                       </button>
                     ))}
                   </div>
-                  <div className="text-sm leading-relaxed prose prose-sm max-w-none" style={{ color: 'var(--text)' }}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  <div className="text-sm leading-relaxed max-w-none" style={{ color: 'var(--text)' }}>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        table: ({ children }) => (
+                          <div style={{ overflowX: 'auto', marginBottom: 12 }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>{children}</table>
+                          </div>
+                        ),
+                        thead: ({ children }) => (
+                          <thead style={{ background: '#f3f4f6' }}>{children}</thead>
+                        ),
+                        th: ({ children }) => (
+                          <th style={{ border: '1px solid #e5e7eb', padding: '6px 10px', textAlign: 'left', fontWeight: 600, fontSize: 12 }}>{children}</th>
+                        ),
+                        td: ({ children }) => (
+                          <td style={{ border: '1px solid #e5e7eb', padding: '6px 10px', fontSize: 12 }}>{children}</td>
+                        ),
+                        ul: ({ children }) => (
+                          <ul style={{ paddingLeft: 20, marginBottom: 8 }}>{children}</ul>
+                        ),
+                        ol: ({ children }) => (
+                          <ol style={{ paddingLeft: 20, marginBottom: 8 }}>{children}</ol>
+                        ),
+                        li: ({ children }) => (
+                          <li style={{ marginBottom: 4 }}>{children}</li>
+                        ),
+                        h3: ({ children }) => (
+                          <h3 style={{ fontSize: 15, fontWeight: 700, margin: '12px 0 6px', color: 'var(--text)' }}>{children}</h3>
+                        ),
+                        h4: ({ children }) => (
+                          <h4 style={{ fontSize: 14, fontWeight: 600, margin: '10px 0 4px', color: 'var(--text)' }}>{children}</h4>
+                        ),
+                        strong: ({ children }) => (
+                          <strong style={{ fontWeight: 700, color: 'var(--text)' }}>{children}</strong>
+                        ),
+                        p: ({ children }) => (
+                          <p style={{ marginBottom: 8, lineHeight: 1.6 }}>{children}</p>
+                        ),
+                      }}
+                    >
                       {activeText || '—'}
                     </ReactMarkdown>
                   </div>
