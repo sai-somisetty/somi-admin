@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
 import { incrementActivity } from '@/lib/concept-locks'
@@ -220,17 +222,15 @@ function ConceptCard({
                           color: activeVariation === v ? 'white' : 'var(--muted)',
                         }}
                       >
-                        V{v}
+                        {v === 1 ? '⚡ Quick' : v === 2 ? '📝 Revise' : '📖 Master'}
                       </button>
                     ))}
                   </div>
-                  <textarea
-                    readOnly
-                    className="w-full text-sm leading-relaxed resize-none border-0 outline-none"
-                    style={{ color: 'var(--text)', background: 'transparent', fontFamily: 'inherit' }}
-                    rows={8}
-                    value={activeText || '—'}
-                  />
+                  <div className="text-sm leading-relaxed prose prose-sm max-w-none" style={{ color: 'var(--text)' }}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {activeText || '—'}
+                    </ReactMarkdown>
+                  </div>
                 </SectionBlock>
 
                 {/* 3. KITTY INTERACTION */}
