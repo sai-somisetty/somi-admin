@@ -37,6 +37,22 @@ interface SmartExtractConcept {
   continues_from_previous?: boolean
   continues_on_next?: boolean
   order?: number
+  book_page?: number | null
+}
+
+/** Preview row (editable before save) */
+interface PreviewConcept extends SmartExtractConcept {
+  id: string
+  book_page?: number
+}
+
+const DB_CONTENT_TYPES = new Set(['text', 'list', 'table', 'definition', 'image'])
+
+function normalizeContentType(t: string | undefined): 'text' | 'list' | 'table' | 'definition' | 'image' {
+  const s = String(t || 'text')
+  if (DB_CONTENT_TYPES.has(s)) return s as 'text' | 'list' | 'table' | 'definition' | 'image'
+  if (s === 'formula' || s === 'example') return 'text'
+  return 'text'
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -78,6 +94,10 @@ export default function ContentPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [extractingPdf, setExtractingPdf] = useState(false)
   const extractCanvasRef = useRef<HTMLCanvasElement>(null)
+  const [extractedPreview, setExtractedPreview] = useState<PreviewConcept[]>([])
+  const [showPreview, setShowPreview] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState('')
+  const [saveMsg, setSaveMsg] = useState('')
 
   // ─── Load hierarchy ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -428,6 +448,158 @@ export default function ContentPage() {
     document.addEventListener('mouseup', onUp)
   }
 
+  function updatePreview(id: string, field: string, value: unknown) {
+    setExtractedPreview(prev => prev.map(c => (c.id === id ? { ...c, [field]: value } : c)))
+  }
+
+  function deletePreview(id: string) {
+    setExtractedPreview(prev => prev.filter(c => c.id !== id))
+  }
+
+  function movePreview(idx: number, direction: number) {
+    setExtractedPreview(prev => {
+      const arr = [...prev]
+      const targetIdx = idx + direction
+      if (targetIdx < 0 || targetIdx >= arr.length) return arr
+      const temp = arr[idx]
+      arr[idx] = arr[targetIdx]!
+      arr[targetIdx] = temp!
+      return arr
+    })
+  }
+
+  function mergePreview(idx: number) {
+    setExtractedPreview(prev => {
+      const arr = [...prev]
+      if (idx >= arr.length - 1) return arr
+      const current = arr[idx]!
+      const next = arr[idx + 1]!
+      const merged: PreviewConcept = {
+        ...current,
+        text: `${current.text || ''}\n\n${next.text || ''}`,
+        concept_title: current.concept_title || next.concept_title || null,
+        is_key_concept: Boolean(current.is_key_concept || next.is_key_concept),
+        id: `preview_merge_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      }
+      arr.splice(idx, 2, merged)
+      return arr
+    })
+  }
+
+  function splitPreview(idx: number) {
+    setExtractedPreview(prev => {
+      const arr = [...prev]
+      const concept = arr[idx]
+      if (!concept) return arr
+      const text = concept.text || ''
+
+      const matches = [...text.matchAll(/\n\n/g)]
+      const newlines = matches.map(m => m.index).filter((i): i is number => typeof i === 'number')
+
+      if (newlines.length === 0) {
+        alert('No paragraph break found to split at. Add a blank line where you want to split, then try again.')
+        return arr
+      }
+
+      const mid = Math.floor(text.length / 2)
+      let bestSplit = newlines[0]!
+      let bestDist = Math.abs(newlines[0]! - mid)
+      for (const nl of newlines) {
+        const dist = Math.abs(nl - mid)
+        if (dist < bestDist) {
+          bestDist = dist
+          bestSplit = nl
+        }
+      }
+
+      const part1 = text.slice(0, bestSplit).trim()
+      const part2 = text.slice(bestSplit + 2).trim()
+
+      const concept1: PreviewConcept = {
+        ...concept,
+        text: part1,
+        id: `${concept.id}_a`,
+      }
+      const concept2: PreviewConcept = {
+        ...concept,
+        text: part2,
+        concept_title: '',
+        id: `${concept.id}_b`,
+      }
+
+      arr.splice(idx, 1, concept1, concept2)
+      return arr
+    })
+  }
+
+  async function saveAllPreviewed() {
+    if (!selCourse || !selPaper || selChapter == null || !selSubChapter || !user) return
+
+    setSaving(true)
+    setSaveMsg('')
+
+    try {
+      const bookPages = [...new Set(extractedPreview.map(c => c.book_page ?? selBookPage ?? 0).filter(bp => bp > 0))]
+      const nextOrder = new Map<number, number>()
+
+      for (const bp of bookPages) {
+        const { data: existingRows } = await supabase
+          .from('concepts')
+          .select('order_index')
+          .eq('course_id', selCourse)
+          .eq('paper_number', selPaper)
+          .eq('chapter_number', selChapter)
+          .eq('sub_chapter_id', selSubChapter)
+          .eq('book_page', bp)
+          .order('order_index', { ascending: false })
+          .limit(1)
+        nextOrder.set(bp, existingRows?.[0]?.order_index ?? 0)
+      }
+
+      let savedCount = 0
+      for (const c of extractedPreview) {
+        const bp = c.book_page ?? selBookPage
+        if (bp == null) continue
+        const cur = (nextOrder.get(bp) ?? 0) + 1
+        nextOrder.set(bp, cur)
+        const ct = normalizeContentType(c.content_type)
+        const { error } = await supabase.from('concepts').insert({
+          course_id: selCourse,
+          paper_number: selPaper,
+          chapter_number: selChapter,
+          sub_chapter_id: selSubChapter,
+          book_page: bp,
+          order_index: cur,
+          concept_title: c.concept_title || null,
+          heading: c.heading || null,
+          content_type: ct,
+          text: c.text || '',
+          is_key_concept: c.is_key_concept || false,
+          is_verified: false,
+          needs_work: false,
+          review_status: 'draft',
+          created_by: user.id,
+          updated_at: new Date().toISOString(),
+        })
+        if (!error) savedCount++
+      }
+
+      if (savedCount > 0) await incrementActivity(user.id, 'concepts_entered', savedCount)
+
+      if (selBookPage) {
+        await loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
+      }
+      setExtractedPreview([])
+      setShowPreview(false)
+      setBulkProgress('')
+      setSaveMsg(`Saved ${savedCount} concepts!`)
+    } catch (err: unknown) {
+      setSaveMsg('Error: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function extractFromPdf() {
     if (!selBookPage || !selCourse || !selPaper || selChapter == null || !selSubChapter || !user) return
     setExtractingPdf(true)
@@ -497,86 +669,145 @@ export default function ContentPage() {
         paragraphs?: SmartExtractConcept[]
       }
 
-      let concepts: SmartExtractConcept[] = [...(data.concepts ?? data.paragraphs ?? [])]
-
-      // Cross-page: merge first concept into last row on previous book page
-      if (concepts.length > 0 && concepts[0].continues_from_previous) {
-        const prevIdx = currentPageIndex - 1
-        if (prevIdx >= 0 && pageRange.length > 0) {
-          const prevBookPage = pageRange[prevIdx]
-          const { data: prevRows } = await supabase
-            .from('concepts')
-            .select('id, text, concept_title, order_index')
-            .eq('course_id', selCourse)
-            .eq('paper_number', selPaper)
-            .eq('chapter_number', selChapter)
-            .eq('sub_chapter_id', selSubChapter)
-            .eq('book_page', prevBookPage)
-            .order('order_index', { ascending: false })
-            .limit(1)
-
-          const lastExisting = prevRows?.[0] as { id: string; text: string; concept_title: string | null } | undefined
-          if (lastExisting) {
-            const mergedText = `${lastExisting.text}\n\n${concepts[0].text ?? ''}`
-            await supabase
-              .from('concepts')
-              .update({
-                text: mergedText,
-                concept_title: lastExisting.concept_title || concepts[0].concept_title || null,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', lastExisting.id)
-            concepts.shift()
-          }
-        }
-      }
-
-      if (concepts.length === 0) {
+      const rows = [...(data.concepts ?? data.paragraphs ?? [])]
+      if (rows.length === 0) {
         alert('No content found on this page')
         return
       }
 
-      const dbContentTypes = new Set(['text', 'list', 'table', 'definition', 'image'])
-      function normalizeContentType(t: string | undefined): 'text' | 'list' | 'table' | 'definition' | 'image' {
-        const s = String(t || 'text')
-        if (dbContentTypes.has(s)) return s as 'text' | 'list' | 'table' | 'definition' | 'image'
-        if (s === 'formula' || s === 'example') return 'text'
-        return 'text'
-      }
+      const baseId = Date.now()
+      const concepts: PreviewConcept[] = rows.map((p, i) => ({
+        ...p,
+        order: i + 1,
+        book_page: selBookPage,
+        id: `preview_${baseId}_${i}`,
+        text: p.text ?? '',
+      }))
 
-      const existingCount = paragraphs.length
-      let savedCount = 0
-      for (let i = 0; i < concepts.length; i++) {
-        const p = concepts[i]
-        const ct = normalizeContentType(p.content_type)
-        const { error } = await supabase.from('concepts').insert({
-          course_id: selCourse,
-          paper_number: selPaper,
-          chapter_number: selChapter,
-          sub_chapter_id: selSubChapter,
-          book_page: selBookPage,
-          order_index: existingCount + i + 1,
-          concept_title: p.concept_title || null,
-          heading: p.heading || null,
-          content_type: ct,
-          text: p.text || '',
-          is_key_concept: p.is_key_concept || false,
-          is_verified: false,
-          needs_work: false,
-          review_status: 'draft',
-          created_by: user.id,
-          updated_at: new Date().toISOString(),
-        })
-        if (!error) savedCount++
-      }
-
-      if (savedCount > 0) await incrementActivity(user.id, 'concepts_entered', savedCount)
-
-      await loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
-
-      alert(`Saved ${savedCount} concept(s) from page ${selBookPage}`)
+      setExtractedPreview(prev => [...prev, ...concepts])
+      setShowPreview(true)
+      setBulkProgress('')
     } catch (err: unknown) {
       alert('Extract failed: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setExtractingPdf(false)
+    }
+  }
+
+  async function extractSubChapter() {
+    if (!selCourse || !selPaper || selChapter == null || !selSubChapter || !user) return
+    setExtractingPdf(true)
+    setBulkProgress('Starting…')
+    setSaveMsg('')
+
+    try {
+      const paper = papers.find(p => p.course_id === selCourse && p.paper_number === selPaper)
+      if (!paper?.pdf_url) throw new Error('No PDF URL for this paper')
+
+      if (!window.pdfjsLib) {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement('script')
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+          script.onload = () => {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+              'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+            resolve()
+          }
+          script.onerror = reject
+          document.head.appendChild(script)
+        })
+      }
+
+      const doc = await window.pdfjsLib.getDocument(paper.pdf_url).promise
+      const sc = subChapters.find(
+        s =>
+          s.course_id === selCourse &&
+          s.paper_number === selPaper &&
+          s.chapter_number === selChapter &&
+          s.sub_chapter_id === selSubChapter
+      )
+
+      let pagesLoop = [...pageRange]
+      if (sc?.start_book_page != null && sc?.end_book_page != null) {
+        const startPg = sc.start_book_page
+        const endPg = sc.end_book_page
+        pagesLoop = pageRange.filter(pg => pg >= startPg && pg <= endPg)
+      }
+      if (pagesLoop.length === 0) {
+        alert('No pages in range for this sub-chapter')
+        return
+      }
+
+      const canvas = extractCanvasRef.current
+      if (!canvas) throw new Error('Canvas not ready')
+
+      let acc: PreviewConcept[] = [...extractedPreview]
+      let globalOrder = acc.length
+
+      for (const pg of pagesLoop) {
+        setBulkProgress(`Reading page ${pg}…`)
+
+        const displayed = pg + pdfPageOffset
+        const pdfPageNum = Math.min(Math.max(1, displayed + PDF_JS_OFFSET), doc.numPages)
+        const pdfPage = await doc.getPage(pdfPageNum)
+        const viewport = pdfPage.getViewport({ scale: 2 })
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('Canvas context missing')
+        await pdfPage.render({ canvasContext: ctx, viewport }).promise
+        const base64 = canvas.toDataURL('image/png').split(',')[1]
+
+        const res = await fetch('/api/smart-extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image_base64: base64,
+            media_type: 'image/png',
+            book_page: pg,
+            context: {
+              paper_title: paper.title,
+              chapter_title: currentChapter?.title,
+              sub_chapter_title: sc?.title,
+            },
+          }),
+        })
+
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}))
+          throw new Error((errBody as { error?: string }).error || `Extraction failed for page ${pg}`)
+        }
+
+        const data = (await res.json()) as {
+          concepts?: SmartExtractConcept[]
+          paragraphs?: SmartExtractConcept[]
+        }
+        const raw = [...(data.concepts ?? data.paragraphs ?? [])]
+
+        let batchConcepts: PreviewConcept[] = raw.map((c, i) => ({
+          ...c,
+          order: globalOrder + i + 1,
+          book_page: c.book_page ?? pg,
+          id: `preview_${Date.now()}_${pg}_${i}_${Math.random().toString(36).slice(2, 9)}`,
+          text: c.text ?? '',
+        }))
+
+        if (batchConcepts[0]?.continues_from_previous && acc.length > 0) {
+          const last = { ...acc[acc.length - 1]! }
+          last.text = `${last.text || ''}\n\n${batchConcepts[0].text || ''}`
+          last.concept_title = last.concept_title || batchConcepts[0].concept_title || null
+          acc = [...acc.slice(0, -1), last, ...batchConcepts.slice(1)]
+        } else {
+          acc = [...acc, ...batchConcepts]
+        }
+        globalOrder = acc.length
+      }
+
+      setExtractedPreview(acc)
+      setShowPreview(true)
+      setBulkProgress(`Extracted ${acc.length} concepts — review below`)
+    } catch (err: unknown) {
+      alert('Sub-chapter extract failed: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
       setExtractingPdf(false)
     }
@@ -797,6 +1028,154 @@ export default function ContentPage() {
                 )
               })}
 
+              {saveMsg && (
+                <div style={{ fontSize: 12, color: saveMsg.startsWith('Error') ? '#dc2626' : '#059669', marginBottom: 8 }}>
+                  {saveMsg}
+                </div>
+              )}
+
+              {bulkProgress && (
+                <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 8 }}>{bulkProgress}</div>
+              )}
+
+              {showPreview && extractedPreview.length > 0 && (
+                <div style={{
+                  marginTop: 16, padding: 16, background: '#f8f7f4',
+                  borderRadius: 12, border: '2px solid #071739',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <div>
+                      <h3 style={{ fontSize: 15, fontWeight: 700, color: '#071739', marginBottom: 2 }}>
+                        Review Extracted Content
+                      </h3>
+                      <p style={{ fontSize: 11, color: '#6b7280' }}>
+                        {extractedPreview.length} concepts · Edit titles, text, or delete before saving
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => { setExtractedPreview([]); setShowPreview(false); setBulkProgress(''); setSaveMsg('') }}
+                        style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', fontSize: 12, cursor: 'pointer', color: '#6b7280' }}
+                      >
+                        Discard All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void saveAllPreviewed()}
+                        disabled={saving}
+                        style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: '#071739', color: '#E3C39D', fontSize: 12, fontWeight: 600, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.6 : 1 }}
+                      >
+                        Save All ({extractedPreview.length}) to DB
+                      </button>
+                    </div>
+                  </div>
+
+                  {extractedPreview.map((concept, idx) => (
+                    <div key={concept.id} style={{
+                      padding: 14, marginBottom: 10, borderRadius: 10,
+                      background: '#fff', border: '1px solid #e5e7eb',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+                        <span style={{ fontSize: 20, fontWeight: 700, color: '#071739', opacity: 0.12, minWidth: 28, fontFamily: 'Georgia, serif' }}>
+                          {idx + 1}
+                        </span>
+                        <div style={{ flex: 1 }}>
+                          <input
+                            value={concept.concept_title || ''}
+                            onChange={e => updatePreview(concept.id, 'concept_title', e.target.value)}
+                            placeholder="Concept title — make it meaningful for students"
+                            style={{
+                              width: '100%', fontSize: 14, fontWeight: 600, border: 'none',
+                              outline: 'none', color: '#071739', background: 'transparent',
+                              borderBottom: '1.5px solid #e5e7eb', paddingBottom: 4,
+                            }}
+                          />
+                          <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
+                            <span style={{ fontSize: 10, color: '#9ca3af' }}>Pg {concept.book_page ?? '—'}</span>
+                            <select
+                              value={concept.content_type || 'text'}
+                              onChange={e => updatePreview(concept.id, 'content_type', e.target.value)}
+                              style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, border: '1px solid #e5e7eb', color: '#6b7280', background: '#fff' }}
+                            >
+                              <option value="text">Text</option>
+                              <option value="definition">Definition</option>
+                              <option value="list">List</option>
+                              <option value="table">Table</option>
+                              <option value="formula">Formula</option>
+                              <option value="example">Example</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => updatePreview(concept.id, 'is_key_concept', !concept.is_key_concept)}
+                              style={{
+                                fontSize: 10, padding: '2px 8px', borderRadius: 4, cursor: 'pointer',
+                                background: concept.is_key_concept ? '#fef3c7' : '#f3f4f6',
+                                color: concept.is_key_concept ? '#d97706' : '#9ca3af',
+                                border: 'none', fontWeight: 600,
+                              }}
+                            >
+                              {concept.is_key_concept ? '★ Key' : '☆ Key'}
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                          <button type="button" onClick={() => movePreview(idx, -1)} disabled={idx === 0}
+                            style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', fontSize: 11, opacity: idx === 0 ? 0.3 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>↑</button>
+                          <button type="button" onClick={() => movePreview(idx, 1)} disabled={idx === extractedPreview.length - 1}
+                            style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', fontSize: 11, opacity: idx === extractedPreview.length - 1 ? 0.3 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>↓</button>
+                          {idx < extractedPreview.length - 1 && (
+                            <button type="button" onClick={() => mergePreview(idx)}
+                              title="Merge with next concept"
+                              style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⊕</button>
+                          )}
+                          <button type="button" onClick={() => splitPreview(idx)}
+                            title="Split at cursor position"
+                            style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✂</button>
+                          <button type="button" onClick={() => deletePreview(concept.id)}
+                            style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #fee2e2', background: '#fef2f2', cursor: 'pointer', fontSize: 11, color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                        </div>
+                      </div>
+
+                      <textarea
+                        value={concept.text}
+                        onChange={e => updatePreview(concept.id, 'text', e.target.value)}
+                        rows={Math.min(10, Math.max(3, (concept.text || '').split('\n').length + 1))}
+                        style={{
+                          width: '100%', fontSize: 12, lineHeight: 1.7, color: '#1f2937',
+                          border: '1px solid #f3f4f6', borderRadius: 8, padding: 10,
+                          resize: 'vertical', outline: 'none', background: '#fafaf8',
+                          fontFamily: 'inherit',
+                        }}
+                      />
+                    </div>
+                  ))}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTop: '1px solid #e5e7eb' }}>
+                    <span style={{ fontSize: 12, color: '#6b7280' }}>
+                      {extractedPreview.length} concepts ready to save
+                    </span>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => { setExtractedPreview([]); setShowPreview(false); setBulkProgress(''); setSaveMsg('') }}
+                        style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', fontSize: 12, cursor: 'pointer' }}
+                      >
+                        Discard
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void saveAllPreviewed()}
+                        disabled={saving}
+                        style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: '#071739', color: '#E3C39D', fontSize: 13, fontWeight: 600, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.6 : 1 }}
+                      >
+                        Save All to Database
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Add / Edit Form */}
               {showAddForm ? (
                 <div style={{ background: 'white', border: '2px solid var(--accent)', borderRadius: 10, padding: 16, marginTop: 8 }}>
@@ -937,6 +1316,22 @@ export default function ContentPage() {
                     }}
                   >
                     {extractingPdf ? 'Claude is reading...' : 'Extract from PDF'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void extractSubChapter()}
+                    disabled={!selSubChapter || extractingPdf}
+                    title="Extract every page in this sub-chapter into the review panel"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '10px 16px',
+                      background: '#0A2E28', color: '#fff',
+                      border: 'none', borderRadius: 8, fontSize: 12,
+                      fontWeight: 600, cursor: 'pointer',
+                      opacity: !selSubChapter || extractingPdf ? 0.4 : 1,
+                    }}
+                  >
+                    {extractingPdf ? '…' : 'Extract sub-chapter'}
                   </button>
                 </div>
               )}
