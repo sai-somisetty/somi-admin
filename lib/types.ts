@@ -116,7 +116,11 @@ export interface Concept {
   verified_at: string | null
   needs_work: boolean
   rejection_note: string | null
-  review_status?: 'draft' | 'submitted' | 'approved' | 'rejected'
+  review_status?: 'draft' | 'submitted' | 'approved' | 'rejected' | 'escalated'
+  needs_expert_review?: boolean
+  escalation_note?: string | null
+  escalated_by?: string | null
+  escalated_at?: string | null
   created_by: string | null
   created_at: string
   updated_at: string

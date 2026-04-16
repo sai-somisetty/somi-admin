@@ -10,7 +10,7 @@ import type { AuthUser, Concept } from '@/lib/types'
 
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false })
 
-type Filter = 'all' | 'submitted' | 'pending' | 'approved' | 'rejected'
+type Filter = 'all' | 'submitted' | 'pending' | 'approved' | 'rejected' | 'escalated'
 
 interface ConceptRow extends Concept {
   creator_name: string | null
@@ -18,6 +18,8 @@ interface ConceptRow extends Concept {
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ concept }: { concept: Concept }) {
+  if (concept.needs_expert_review)
+    return <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 99, background: '#FEF3C7', color: '#D97706', fontWeight: 600 }}>Escalated</span>
   if (concept.is_verified)
     return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Approved</span>
   if (concept.needs_work)
@@ -201,6 +203,20 @@ function ConceptCard({
             <div className="flex" style={{ minHeight: 580 }}>
               {/* ── Middle Content — flex-1 ── */}
               <div className="overflow-y-auto p-4 space-y-2.5 flex-1">
+
+                {concept.needs_expert_review && concept.escalation_note && (
+                  <div style={{
+                    padding: '8px 12px', borderRadius: 8, marginBottom: 8,
+                    background: '#FEF3C7', border: '1px solid #FDE68A',
+                  }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#D97706' }}>
+                      ESCALATION NOTE:
+                    </span>
+                    <p style={{ fontSize: 12, color: '#92400E', marginTop: 2 }}>
+                      {concept.escalation_note}
+                    </p>
+                  </div>
+                )}
 
                 {/* 1. ICMAI TEXT */}
                 <SectionBlock title="ICMAI Text">
@@ -592,6 +608,10 @@ export default function ReviewPage() {
       review_status: 'approved',
       verified_by: user.id,
       verified_at: new Date().toISOString(),
+      needs_expert_review: false,
+      escalation_note: null,
+      escalated_by: null,
+      escalated_at: null,
     }).eq('id', concept.id)
     await supabase.from('review_logs').insert({ concept_id: concept.id, reviewed_by: user.id, action: 'approved' })
     await incrementActivity(user.id, 'concepts_approved')
@@ -621,6 +641,7 @@ export default function ReviewPage() {
     if (filter === 'pending') return !c.is_verified && !c.needs_work && (!c.review_status || c.review_status === 'draft')
     if (filter === 'approved') return c.is_verified
     if (filter === 'rejected') return c.needs_work
+    if (filter === 'escalated') return !!c.needs_expert_review
     return true
   })
 
@@ -630,6 +651,7 @@ export default function ReviewPage() {
     pending: concepts.filter(c => !c.is_verified && !c.needs_work && (!c.review_status || c.review_status === 'draft')).length,
     approved: concepts.filter(c => c.is_verified).length,
     rejected: concepts.filter(c => c.needs_work).length,
+    escalated: concepts.filter(c => c.needs_expert_review).length,
   }
 
   return (
@@ -643,30 +665,44 @@ export default function ReviewPage() {
         </div>
 
         {/* Filter tabs */}
-        <div className="flex gap-2 mb-5">
-          {(['all', 'submitted', 'pending', 'approved', 'rejected'] as Filter[]).map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className="rounded-lg px-4 py-2 text-sm font-medium transition-all cursor-pointer"
-              style={{
-                background: filter === f ? 'var(--accent)' : 'var(--surface)',
-                color: filter === f ? 'white' : 'var(--text)',
-                border: filter === f ? 'none' : '1px solid #e5e7eb',
-              }}
-            >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-              <span
-                className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full"
+        <div className="flex flex-wrap gap-2 mb-5">
+          {(['all', 'submitted', 'pending', 'approved', 'rejected', 'escalated'] as Filter[]).map(f => {
+            const isEscalatedTab = f === 'escalated'
+            const active = filter === f
+            return (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className="rounded-lg px-4 py-2 text-sm font-medium transition-all cursor-pointer"
                 style={{
-                  background: filter === f ? 'rgba(255,255,255,0.25)' : '#f0f0ec',
-                  color: filter === f ? 'white' : 'var(--muted)',
+                  background: active
+                    ? (isEscalatedTab ? '#FEF3C7' : 'var(--accent)')
+                    : 'var(--surface)',
+                  color: active
+                    ? (isEscalatedTab ? '#D97706' : 'white')
+                    : 'var(--text)',
+                  border: active
+                    ? (isEscalatedTab ? '1.5px solid #FDE68A' : 'none')
+                    : '1px solid #e5e7eb',
                 }}
               >
-                {counts[f]}
-              </span>
-            </button>
-          ))}
+                {isEscalatedTab ? '⚠ Escalated' : f.charAt(0).toUpperCase() + f.slice(1)}
+                <span
+                  className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full"
+                  style={{
+                    background: active
+                      ? (isEscalatedTab ? 'rgba(217,119,6,0.15)' : 'rgba(255,255,255,0.25)')
+                      : '#f0f0ec',
+                    color: active
+                      ? (isEscalatedTab ? '#D97706' : 'white')
+                      : 'var(--muted)',
+                  }}
+                >
+                  {counts[f]}
+                </span>
+              </button>
+            )
+          })}
         </div>
 
         {loading ? (

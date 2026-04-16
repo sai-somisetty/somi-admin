@@ -290,6 +290,10 @@ export default function ContentPage() {
         status: 'in_progress',
       }, { onConflict: 'course_id,paper_number,chapter_number,book_page' })
 
+      const editedPara = editingId ? paragraphs.find(p => p.id === editingId) : null
+      const clearingRejection =
+        !!editedPara && (editedPara.needs_work || editedPara.review_status === 'rejected')
+
       const payload = {
         course_id: selCourse,
         paper_number: selPaper,
@@ -307,9 +311,10 @@ export default function ContentPage() {
         is_key_concept: false,
         is_verified: false,
         needs_work: false,
-        review_status: 'draft',
+        review_status: 'draft' as const,
         created_by: user.id,
         updated_at: new Date().toISOString(),
+        ...(clearingRejection ? { rejection_note: null as string | null } : {}),
       }
 
       if (editingId) {
@@ -1020,10 +1025,13 @@ export default function ContentPage() {
               {paragraphs.map((para, idx) => {
                 const isExpanded = expandedId === para.id
                 const isImage = para.content_type === 'image'
+                const isRejected = !!(para.needs_work || para.review_status === 'rejected')
+                const isEscalated = !!para.needs_expert_review
                 return (
                   <div key={para.id} style={{
-                    background: 'white',
+                    background: isRejected ? '#FFFBFB' : isEscalated ? '#FFFDF5' : 'white',
                     border: isExpanded ? '1px solid var(--accent)' : '1px solid #e5e7eb',
+                    borderLeft: isRejected ? '4px solid #DC2626' : isEscalated ? '4px solid #D97706' : 'none',
                     borderRadius: 8,
                     marginBottom: 4,
                     overflow: 'hidden',
@@ -1057,6 +1065,40 @@ export default function ContentPage() {
                     {/* Expanded */}
                     {isExpanded && (
                       <div style={{ borderTop: '1px solid #f0f0ec', padding: 12 }}>
+                        {isRejected && (
+                          <div style={{
+                            padding: '8px 12px', borderRadius: 8, marginBottom: 10,
+                            background: '#FEF2F2', border: '1.5px solid #FECACA',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: '#DC2626' }}>
+                                ✗ Rejected by reviewer
+                              </span>
+                            </div>
+                            {para.rejection_note && (
+                              <p style={{ fontSize: 12, color: '#991B1B', lineHeight: 1.5 }}>
+                                {para.rejection_note}
+                              </p>
+                            )}
+                            <p style={{ fontSize: 10, color: '#DC2626', opacity: 0.6, marginTop: 4 }}>
+                              Compare with PDF on the right → Edit → Resubmit
+                            </p>
+                          </div>
+                        )}
+                        {isEscalated && (
+                          <div style={{
+                            padding: '6px 10px', borderRadius: 6, marginBottom: 10,
+                            background: '#FEF3C7', border: '1px solid #FDE68A',
+                            fontSize: 11, color: '#92400E',
+                          }}>
+                            <strong>⚠ Flagged for expert review</strong>
+                            {para.escalation_note && (
+                              <span style={{ marginLeft: 6, opacity: 0.8 }}>
+                                — {para.escalation_note}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         {/* Text preview */}
                         <div style={{ background: '#f9fafb', borderRadius: 6, padding: 10, marginBottom: 10, fontSize: 13, lineHeight: 1.6, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
                           {isImage ? (
@@ -1073,6 +1115,30 @@ export default function ContentPage() {
 
                         {/* Actions */}
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                          {user?.role === 'intern' && !para.is_verified && !para.needs_expert_review && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const note = window.prompt('What needs expert review? Describe the issue:')
+                                if (!note || !user || !selCourse || !selPaper || selChapter == null || !selSubChapter || !selBookPage) return
+                                await supabase.from('concepts').update({
+                                  needs_expert_review: true,
+                                  escalation_note: note,
+                                  escalated_by: user.id,
+                                  escalated_at: new Date().toISOString(),
+                                  review_status: 'escalated',
+                                }).eq('id', para.id)
+                                reloadCurrentPage()
+                              }}
+                              style={{
+                                padding: '4px 10px', borderRadius: 6, fontSize: 11,
+                                fontWeight: 600, cursor: 'pointer',
+                                background: '#FEF3C7', color: '#D97706', border: 'none',
+                              }}
+                            >
+                              ⚠ Flag for Expert
+                            </button>
+                          )}
                           <button onClick={() => startEdit(para)} style={actionBtn('#E67E22', 'white')}>✏️ Edit</button>
                           <button onClick={() => moveParagraph(para.id, 'up')} disabled={idx === 0} style={actionBtn('#f3f4f6', 'var(--text)')}>↑</button>
                           <button onClick={() => moveParagraph(para.id, 'down')} disabled={idx === paragraphs.length - 1} style={actionBtn('#f3f4f6', 'var(--text)')}>↓</button>
@@ -1537,6 +1603,8 @@ export default function ContentPage() {
 
 // ─── Status Badge ────────────────────────────────────────────────────────────
 function StatusBadge({ concept }: { concept: Concept }) {
+  if (concept.needs_expert_review)
+    return <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 99, background: '#FEF3C7', color: '#D97706', fontWeight: 600 }}>Escalated</span>
   if (concept.is_verified || concept.review_status === 'approved')
     return <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 99, background: '#dcfce7', color: '#16a34a', fontWeight: 600 }}>Verified</span>
   if (concept.review_status === 'submitted')

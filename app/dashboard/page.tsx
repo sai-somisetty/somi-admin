@@ -10,6 +10,7 @@ interface Stats {
   submitted: number
   pending: number
   rejected: number
+  escalated: number
   generated: number
   ungenerated: number
 }
@@ -50,7 +51,7 @@ interface WeekRow {
 
 export default function DashboardPage() {
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [stats, setStats] = useState<Stats>({ total: 0, verified: 0, submitted: 0, pending: 0, rejected: 0, generated: 0, ungenerated: 0 })
+  const [stats, setStats] = useState<Stats>({ total: 0, verified: 0, submitted: 0, pending: 0, rejected: 0, escalated: 0, generated: 0, ungenerated: 0 })
   const [internStats, setInternStats] = useState<InternStat[]>([])
   const [chapterProgress, setChapterProgress] = useState<ChapterProgress[]>([])
   const [todayActivity, setTodayActivity] = useState<DailyRow[]>([])
@@ -62,19 +63,20 @@ export default function DashboardPage() {
     try {
       const { data: concepts } = await supabase
         .from('concepts')
-        .select('id, is_verified, needs_work, review_status, chapter_number, created_by, tenglish')
+        .select('id, is_verified, needs_work, needs_expert_review, review_status, chapter_number, created_by, tenglish')
 
       if (!concepts) return
 
       const total = concepts.length
       const verified = concepts.filter(c => c.is_verified).length
       const rejected = concepts.filter(c => c.needs_work).length
+      const escalated = concepts.filter(c => c.needs_expert_review).length
       const submitted = concepts.filter(c => c.review_status === 'submitted').length
       const generated = concepts.filter(c => c.tenglish).length
       const ungenerated = concepts.filter(c => !c.tenglish).length
       const pending = total - verified - rejected - submitted
 
-      setStats({ total, verified, submitted, pending, rejected, generated, ungenerated })
+      setStats({ total, verified, submitted, pending, rejected, escalated, generated, ungenerated })
 
       if (u?.role === 'admin' || u?.role === 'expert') {
         // Per user stats
@@ -172,6 +174,7 @@ export default function DashboardPage() {
     { label: 'Submitted', value: stats.submitted, color: '#2563eb', icon: '📤' },
     { label: 'Drafts', value: stats.pending, color: '#d97706', icon: '⏳' },
     { label: 'Needs Work', value: stats.rejected, color: '#dc2626', icon: '❌' },
+    { label: 'Escalated', value: stats.escalated, color: '#D97706', icon: '⚠️' },
     { label: 'Ungenerated', value: stats.ungenerated, color: '#7c3aed', icon: '🤖' },
   ]
 
@@ -195,7 +198,7 @@ export default function DashboardPage() {
         ) : (
           <>
             {/* Stats cards */}
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-6 mb-8">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 mb-8">
               {statCards.map(card => (
                 <div key={card.label} className="rounded-xl p-5 shadow-sm" style={{ background: 'var(--surface)' }}>
                   <div className="flex items-center justify-between mb-3">
