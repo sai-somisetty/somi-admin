@@ -237,6 +237,24 @@ tension oddu for MCQ wrong answer ❌
 same opening word in V1 and V2 ❌
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DUAL LANGUAGE OUTPUT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You MUST generate content in TWO languages for each variation:
+
+1. ENGLISH — Pure professional English
+   - Clear, concise, exam-focused
+   - Proper English grammar throughout
+   - Same Indian company examples (Infosys, Tata, SBI, Zomato)
+   - No Telugu/Hindi words at all
+   - Same structure and points as Tenglish version
+
+2. TENGLISH — Telugu-English mix (your MAMA style)
+   - 80% English nouns/verbs + 20% Telugu connecting words
+   - Same content as English but with Telugu flow
+
+Both versions MUST cover EXACTLY the same points.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Return ONLY valid JSON. Start with { end with }.
@@ -414,6 +432,94 @@ Do NOT return JSON — plain markdown only.`
   return fixTelugu(cleaned);
 }
 
+/** Master tab — same structure as V3 Tenglish but pure professional English (no Telugu). */
+async function generateDeepDiveV3English(
+  icmai_text: string,
+  concept_title: string,
+  chapter: string,
+  sub_chapter: string
+): Promise<string> {
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 8000,
+    system: `You are an expert ICMAI CMA tutor. Write ONLY in clear, professional English.
+No Telugu, Hindi, or informal mixing. Exam-focused tone. Same structure rules as Telugu deep dives but English only.`,
+    messages: [{
+      role: 'user',
+      content: `CHAPTER: ${chapter}
+SUB-CHAPTER: ${sub_chapter}
+CONCEPT: ${concept_title || 'Unknown'}
+
+ICMAI OFFICIAL TEXT:
+"${icmai_text}"
+
+Write the MASTER explanation in ENGLISH for a serious CMA student.
+This is the deepest level — read when they want full mastery.
+
+STRICT RULES:
+- Explain ONLY what is in the ICMAI text above
+- ALWAYS use bullet points — never long prose paragraphs
+- Use numbered lists for steps/sequences
+- Use markdown TABLES for any comparison, classification, or category
+- Be specific — real names, numbers, years
+- Pure English throughout — zero Telugu
+- Total: 400-600 words maximum
+
+STRUCTURE:
+
+**What is [Concept]?**
+
+- Core definition bullet point
+- What it means practically
+- Why it exists
+
+**Why it matters**
+
+- Reason 1
+- Reason 2
+- Exam relevance
+
+**Real India**
+
+Pick memorable Indian examples — same categories as policy/business curriculum.
+Show as bullet points with specifics.
+
+**[If types/categories exist — TABLE]**
+
+| Category | Details | Example |
+|----------|---------|---------|
+| Type 1   | Detail  | Real example |
+| Type 2   | Detail  | Real example |
+
+**How to write this in the exam**
+
+- Keywords the examiner expects
+- Format (points vs paragraph)
+- Minimum points
+- Memory trick if useful
+- Best company/example to cite
+
+**Career connection**
+
+- Which employers use this
+- Situations a CMA faces
+
+Do NOT return JSON — plain markdown only.`,
+    }],
+  });
+
+  const text = response.content[0].type === 'text'
+    ? response.content[0].text : '';
+  let cleaned = text;
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed.explanation) cleaned = parsed.explanation;
+  } catch {
+    cleaned = text;
+  }
+  return cleaned.trim();
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // MAIN POST HANDLER
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -440,6 +546,17 @@ ICMAI OFFICIAL TEXT:
 "${icmai_text}"
 
 GENERATE:
+
+english_v1: SHORT AND PUNCHY in pure professional English (2-3 sentences max).
+  Same points as tenglish_v1. No Telugu. No Hindi.
+  Same opening angle family as tenglish_v1 but written in English.
+
+english_v2: POINT-WISE REVISION in pure professional English.
+  Same structure and bullets/tables as tenglish_v2 but 100% English.
+  Max 150 words. Mirrors the Revise tab content.
+
+english_v3: output empty string ""
+  (Master English is generated in a separate pass — leave empty here.)
 
 tenglish_v1: SHORT AND PUNCHY (2-3 sentences max)
   Core concept only. Direct and clear for the student.
@@ -570,6 +687,9 @@ exam_rubric: Structured JSON object for exam engine.
 
 RETURN EXACTLY THIS JSON:
 {
+  "english_v1": "...",
+  "english_v2": "...",
+  "english_v3": "",
   "tenglish_v1": "...",
   "tenglish_v2": "...",
   "tenglish_v3": "",
@@ -598,10 +718,16 @@ RETURN EXACTLY THIS JSON:
 }`;
 
   try {
-    // Run fast prompt and deep dive V3 in parallel
-    const [fastText, deepDiveText] = await Promise.all([
-      generateWithRetry(fastPrompt, 2000),
+    // Run fast prompt and both deep dives (Tenglish + English) in parallel
+    const [fastText, deepDiveText, deepDiveEnglish] = await Promise.all([
+      generateWithRetry(fastPrompt, 4000),
       generateDeepDiveV3(
+        icmai_text,
+        concept_title,
+        chapter,
+        sub_chapter
+      ),
+      generateDeepDiveV3English(
         icmai_text,
         concept_title,
         chapter,
@@ -612,6 +738,9 @@ RETURN EXACTLY THIS JSON:
     const data = JSON.parse(fastText);
 
     const result = {
+      english: (data.english_v1 || '').trim(),
+      english_variation_2: (data.english_v2 || '').trim(),
+      english_variation_3: (deepDiveEnglish || '').trim(),
       tenglish: fixTelugu(data.tenglish_v1 || ''),
       tenglish_variation_2: fixTelugu(data.tenglish_v2 || ''),
       tenglish_variation_3: deepDiveText,

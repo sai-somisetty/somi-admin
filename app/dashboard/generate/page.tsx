@@ -93,6 +93,9 @@ export default function GenerateQueuePage() {
 
       // Save to DB
       const { error } = await supabase.from('concepts').update({
+        english: data.english || null,
+        english_variation_2: data.english_variation_2 || null,
+        english_variation_3: data.english_variation_3 || null,
         tenglish: data.tenglish || null,
         tenglish_variation_2: data.tenglish_variation_2 || null,
         tenglish_variation_3: data.tenglish_variation_3 || null,

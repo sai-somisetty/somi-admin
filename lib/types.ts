@@ -87,6 +87,9 @@ export interface Concept {
   tenglish: string | null
   tenglish_variation_2: string | null
   tenglish_variation_3: string | null
+  english: string | null
+  english_variation_2: string | null
+  english_variation_3: string | null
   is_key_concept: boolean
   kitty_question: string | null
   mama_kitty_answer: string | null

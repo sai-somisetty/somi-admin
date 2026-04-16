@@ -77,6 +77,10 @@ function ConceptCard({
   const tenglishV2 = concept.tenglish_variation_2 || ''
   const tenglishV3 = concept.tenglish_variation_3 || ''
   const activeText = activeVariation === 1 ? tenglishV1 : activeVariation === 2 ? tenglishV2 : tenglishV3
+  const englishV1 = concept.english || ''
+  const englishV2 = concept.english_variation_2 || ''
+  const englishV3 = concept.english_variation_3 || ''
+  const activeEnglish = activeVariation === 1 ? englishV1 : activeVariation === 2 ? englishV2 : englishV3
 
   function startEdit() {
     setEditForm({
@@ -270,6 +274,55 @@ function ConceptCard({
                       {activeText || '—'}
                     </ReactMarkdown>
                   </div>
+                  {activeEnglish ? (
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e5e7eb' }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', letterSpacing: '0.08em' }}>ENGLISH</span>
+                      <div className="text-sm leading-relaxed max-w-none mt-1" style={{ color: '#1f2937' }}>
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            table: ({ children }) => (
+                              <div style={{ overflowX: 'auto', marginBottom: 12 }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>{children}</table>
+                              </div>
+                            ),
+                            thead: ({ children }) => (
+                              <thead style={{ background: '#f3f4f6' }}>{children}</thead>
+                            ),
+                            th: ({ children }) => (
+                              <th style={{ border: '1px solid #e5e7eb', padding: '6px 10px', textAlign: 'left', fontWeight: 600, fontSize: 12 }}>{children}</th>
+                            ),
+                            td: ({ children }) => (
+                              <td style={{ border: '1px solid #e5e7eb', padding: '6px 10px', fontSize: 12 }}>{children}</td>
+                            ),
+                            ul: ({ children }) => (
+                              <ul style={{ paddingLeft: 20, marginBottom: 8 }}>{children}</ul>
+                            ),
+                            ol: ({ children }) => (
+                              <ol style={{ paddingLeft: 20, marginBottom: 8 }}>{children}</ol>
+                            ),
+                            li: ({ children }) => (
+                              <li style={{ marginBottom: 4 }}>{children}</li>
+                            ),
+                            h3: ({ children }) => (
+                              <h3 style={{ fontSize: 15, fontWeight: 700, margin: '12px 0 6px', color: '#1f2937' }}>{children}</h3>
+                            ),
+                            h4: ({ children }) => (
+                              <h4 style={{ fontSize: 14, fontWeight: 600, margin: '10px 0 4px', color: '#1f2937' }}>{children}</h4>
+                            ),
+                            strong: ({ children }) => (
+                              <strong style={{ fontWeight: 700, color: '#1f2937' }}>{children}</strong>
+                            ),
+                            p: ({ children }) => (
+                              <p style={{ marginBottom: 8, lineHeight: 1.6 }}>{children}</p>
+                            ),
+                          }}
+                        >
+                          {activeEnglish}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                  ) : null}
                 </SectionBlock>
 
                 {/* 3. KITTY INTERACTION */}
