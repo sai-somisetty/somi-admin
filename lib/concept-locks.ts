@@ -75,9 +75,12 @@ export async function releaseAllLocks(userId: string) {
  */
 export async function incrementActivity(
   userId: string,
-  field: 'concepts_entered' | 'concepts_generated' | 'concepts_submitted' | 'concepts_approved' | 'concepts_rejected'
+  field: 'concepts_entered' | 'concepts_generated' | 'concepts_submitted' | 'concepts_approved' | 'concepts_rejected',
+  delta: number = 1
 ) {
   const today = new Date().toISOString().split('T')[0]
+  const inc = Math.floor(delta)
+  if (inc <= 0) return
 
   const { data: existing } = await supabase
     .from('daily_activity')
@@ -100,12 +103,12 @@ export async function incrementActivity(
       >
     >
     const current = row[field] ?? 0
-    await supabase.from('daily_activity').update({ [field]: current + 1 }).eq('id', row.id)
+    await supabase.from('daily_activity').update({ [field]: current + inc }).eq('id', row.id)
   } else {
     await supabase.from('daily_activity').insert({
       user_id: userId,
       activity_date: today,
-      [field]: 1,
+      [field]: inc,
     })
   }
 }

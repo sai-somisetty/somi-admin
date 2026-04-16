@@ -6,7 +6,16 @@ import { getStoredUser } from '@/lib/auth'
 import { acquireLock, releaseLock, incrementActivity } from '@/lib/concept-locks'
 import type { AuthUser, AdminUser, Course, Paper, Chapter, SubChapter, ContentPage, Concept } from '@/lib/types'
 
+declare global {
+  interface Window {
+    pdfjsLib: any
+  }
+}
+
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false })
+
+/** Same offset as `components/PDFViewer.tsx` — book display page → PDF.js page index */
+const PDF_JS_OFFSET = 8
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface ParagraphForm {
@@ -55,6 +64,8 @@ export default function ContentPage() {
   // Image paste
   const [uploadingImage, setUploadingImage] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [extractingPdf, setExtractingPdf] = useState(false)
+  const extractCanvasRef = useRef<HTMLCanvasElement>(null)
 
   // ─── Load hierarchy ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -405,6 +416,122 @@ export default function ContentPage() {
     document.addEventListener('mouseup', onUp)
   }
 
+  async function extractFromPdf() {
+    if (!selBookPage || !selCourse || !selPaper || selChapter == null || !selSubChapter || !user) return
+    setExtractingPdf(true)
+
+    try {
+      const paper = papers.find(p => p.course_id === selCourse && p.paper_number === selPaper)
+      if (!paper?.pdf_url) throw new Error('No PDF URL for this paper')
+
+      if (!window.pdfjsLib) {
+        await new Promise<void>((resolve, reject) => {
+          const script = document.createElement('script')
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+          script.onload = () => {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+              'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+            resolve()
+          }
+          script.onerror = reject
+          document.head.appendChild(script)
+        })
+      }
+
+      const doc = await window.pdfjsLib.getDocument(paper.pdf_url).promise
+      const displayed = selBookPage + pdfPageOffset
+      const pdfPageNum = Math.min(Math.max(1, displayed + PDF_JS_OFFSET), doc.numPages)
+      const page = await doc.getPage(pdfPageNum)
+      const viewport = page.getViewport({ scale: 2 })
+      const canvas = extractCanvasRef.current
+      if (!canvas) throw new Error('Canvas not ready')
+      canvas.width = viewport.width
+      canvas.height = viewport.height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('Canvas context missing')
+      await page.render({ canvasContext: ctx, viewport }).promise
+      const base64 = canvas.toDataURL('image/png').split(',')[1]
+
+      const res = await fetch('/api/smart-extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_base64: base64,
+          media_type: 'image/png',
+          book_page: selBookPage,
+          context: {
+            paper_title: paper.title,
+            chapter_title: currentChapter?.title,
+            sub_chapter_title: subChapters.find(
+              sc =>
+                sc.sub_chapter_id === selSubChapter &&
+                sc.course_id === selCourse &&
+                sc.paper_number === selPaper &&
+                sc.chapter_number === selChapter
+            )?.title,
+          },
+        }),
+      })
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}))
+        throw new Error((errBody as { error?: string }).error || 'Extraction failed')
+      }
+
+      const data = (await res.json()) as {
+        paragraphs?: Array<{
+          concept_title?: string | null
+          heading?: string | null
+          content_type?: string
+          text?: string
+          is_key_concept?: boolean
+        }>
+      }
+
+      if (!data.paragraphs || data.paragraphs.length === 0) {
+        alert('No content found on this page')
+        return
+      }
+
+      const validTypes = new Set(['text', 'list', 'table', 'definition', 'image'])
+      const existingCount = paragraphs.length
+      let savedCount = 0
+      for (let i = 0; i < data.paragraphs.length; i++) {
+        const p = data.paragraphs[i]
+        const ct = validTypes.has(String(p.content_type)) ? (p.content_type as 'text' | 'list' | 'table' | 'definition' | 'image') : 'text'
+        const { error } = await supabase.from('concepts').insert({
+          course_id: selCourse,
+          paper_number: selPaper,
+          chapter_number: selChapter,
+          sub_chapter_id: selSubChapter,
+          book_page: selBookPage,
+          order_index: existingCount + i + 1,
+          concept_title: p.concept_title || null,
+          heading: p.heading || null,
+          content_type: ct,
+          text: p.text || '',
+          is_key_concept: p.is_key_concept || false,
+          is_verified: false,
+          needs_work: false,
+          review_status: 'draft',
+          created_by: user.id,
+          updated_at: new Date().toISOString(),
+        })
+        if (!error) savedCount++
+      }
+
+      if (savedCount > 0) await incrementActivity(user.id, 'concepts_entered', savedCount)
+
+      await loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
+
+      alert(`Saved ${savedCount} paragraphs from page ${selBookPage}`)
+    } catch (err: unknown) {
+      alert('Extract failed: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setExtractingPdf(false)
+    }
+  }
+
   // ─── Get current sub-chapter + chapter info ──────────────────────────────
   if (loading) {
     return (
@@ -418,6 +545,7 @@ export default function ContentPage() {
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', userSelect: isDragging ? 'none' : 'auto' }}>
+      <canvas ref={extractCanvasRef} style={{ display: 'none' }} />
 
       {/* ═══ LEFT: Content Entry Panel ═══ */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 400 }}>
@@ -733,17 +861,34 @@ export default function ContentPage() {
                   </div>
                 </div>
               ) : (
-                <button
-                  onClick={() => { setForm(emptyForm); setEditingId(null); setShowAddForm(true) }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '10px 16px', marginTop: 8,
-                    background: 'var(--accent)', color: 'white',
-                    border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                  }}
-                >
-                  + Add Paragraph
-                </button>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                  <button
+                    onClick={() => { setForm(emptyForm); setEditingId(null); setShowAddForm(true) }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '10px 16px',
+                      background: 'var(--accent)', color: 'white',
+                      border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    + Add Paragraph
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void extractFromPdf()}
+                    disabled={!selBookPage || extractingPdf}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '10px 16px',
+                      background: '#071739', color: '#E3C39D',
+                      border: 'none', borderRadius: 8, fontSize: 13,
+                      fontWeight: 600, cursor: 'pointer',
+                      opacity: !selBookPage || extractingPdf ? 0.4 : 1,
+                    }}
+                  >
+                    {extractingPdf ? 'Claude is reading...' : 'Extract from PDF'}
+                  </button>
+                </div>
               )}
 
               {/* Bottom nav */}
