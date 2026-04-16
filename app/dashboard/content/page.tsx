@@ -107,6 +107,11 @@ export default function ContentPage() {
   const [saveMsg, setSaveMsg] = useState('')
   const [previewUploadingId, setPreviewUploadingId] = useState<string | null>(null)
 
+  const [viewMode, setViewMode] = useState<'page' | 'escalated'>('page')
+  const [escalatedConcepts, setEscalatedConcepts] = useState<(Concept & { creator_name?: string | null })[]>([])
+  const [escalatedCount, setEscalatedCount] = useState(0)
+  const [loadingEscalated, setLoadingEscalated] = useState(false)
+
   // ─── Load hierarchy ──────────────────────────────────────────────────────
   useEffect(() => {
     const u = getStoredUser()
@@ -215,6 +220,41 @@ export default function ContentPage() {
       setParagraphs([])
     }
   }, [selCourse, selPaper, selChapter, selSubChapter, selBookPage, loadParagraphs])
+
+  async function loadEscalated() {
+    setLoadingEscalated(true)
+    const { data, count } = await supabase
+      .from('concepts')
+      .select('*', { count: 'exact' })
+      .eq('needs_expert_review', true)
+      .order('escalated_at', { ascending: false })
+
+    const rows = (data || []) as Concept[]
+    const creatorIds = [...new Set(rows.map(c => c.created_by).filter(Boolean))] as string[]
+    let nameMap: Record<string, string> = {}
+    if (creatorIds.length > 0) {
+      const { data: users } = await supabase.from('admin_users').select('id, name').in('id', creatorIds)
+      if (users) nameMap = Object.fromEntries(users.map(u => [u.id as string, u.name as string]))
+    }
+    setEscalatedConcepts(
+      rows.map(c => ({
+        ...c,
+        creator_name: c.created_by ? nameMap[c.created_by] ?? null : null,
+      }))
+    )
+    setEscalatedCount(typeof count === 'number' ? count : rows.length)
+    setLoadingEscalated(false)
+  }
+
+  useEffect(() => {
+    if (user?.role === 'admin' || user?.role === 'expert') {
+      void supabase
+        .from('concepts')
+        .select('id', { count: 'exact', head: true })
+        .eq('needs_expert_review', true)
+        .then(({ count }) => setEscalatedCount(count ?? 0))
+    }
+  }, [user])
 
   // Auto-select first paper when course changes
   useEffect(() => {
@@ -994,7 +1034,50 @@ export default function ContentPage() {
           )}
         </div>
 
-        {/* ── Paragraph List ── */}
+        {(user?.role === 'admin' || user?.role === 'expert') && (
+          <div style={{ display: 'flex', gap: 4, marginBottom: 12, paddingLeft: 16, paddingRight: 16, paddingTop: 4, background: 'white', borderBottom: '1px solid #e5e7eb' }}>
+            <button
+              type="button"
+              onClick={() => setViewMode('page')}
+              style={{
+                padding: '6px 16px', borderRadius: 6, fontSize: 12,
+                fontWeight: viewMode === 'page' ? 700 : 400,
+                background: viewMode === 'page' ? '#071739' : '#f3f4f6',
+                color: viewMode === 'page' ? '#E3C39D' : '#6b7280',
+                border: 'none', cursor: 'pointer',
+              }}
+            >
+              Page View
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode('escalated')
+                void loadEscalated()
+              }}
+              style={{
+                padding: '6px 16px', borderRadius: 6, fontSize: 12,
+                fontWeight: viewMode === 'escalated' ? 700 : 400,
+                background: viewMode === 'escalated' ? '#D97706' : '#f3f4f6',
+                color: viewMode === 'escalated' ? '#fff' : '#6b7280',
+                border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              ⚠ COE Review
+              {escalatedCount > 0 && (
+                <span style={{
+                  background: 'rgba(255,255,255,0.3)', padding: '1px 6px',
+                  borderRadius: 10, fontSize: 10, fontWeight: 700,
+                }}>
+                  {escalatedCount}
+                </span>
+              )}
+            </button>
+          </div>
+        )}
+
+        {viewMode === 'page' ? (
         <div style={{ flex: 1, overflow: 'auto', padding: 16, background: 'var(--bg)' }}>
           {!selBookPage ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
@@ -1545,6 +1628,154 @@ export default function ContentPage() {
             </>
           )}
         </div>
+        ) : (
+        <div style={{ flex: 1, overflow: 'auto', padding: 16, background: 'var(--bg)' }}>
+          <div style={{ marginBottom: 16 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: '#D97706' }}>
+              ⚠ COE Review — Escalated Concepts
+            </h2>
+            <p style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+              Concepts flagged by interns that need expert/admin decision
+            </p>
+          </div>
+
+          {loadingEscalated ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
+              Loading...
+            </div>
+          ) : escalatedConcepts.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40 }}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: '#6b7280' }}>
+                No escalated concepts
+              </p>
+              <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>
+                All clear — no items need expert review
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {escalatedConcepts.map(concept => (
+                <div key={concept.id} style={{
+                  padding: 16, borderRadius: 12,
+                  background: '#FFFDF5',
+                  border: '1.5px solid #FDE68A',
+                  borderLeft: '4px solid #D97706',
+                }}>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: '#071739', color: '#E3C39D', fontWeight: 600 }}>
+                      P{concept.paper_number}
+                    </span>
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: '#f3f4f6', color: '#6b7280', fontWeight: 500 }}>
+                      Ch {concept.chapter_number}
+                    </span>
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: '#f3f4f6', color: '#6b7280', fontWeight: 500 }}>
+                      {concept.sub_chapter_id}
+                    </span>
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: '#f3f4f6', color: '#6b7280', fontWeight: 500 }}>
+                      Pg {concept.book_page}
+                    </span>
+                    <span style={{ fontSize: 10, color: '#9ca3af', marginLeft: 'auto' }}>
+                      by {concept.creator_name || 'Unknown'}
+                    </span>
+                  </div>
+
+                  <h3 style={{ fontSize: 14, fontWeight: 600, color: '#071739', marginBottom: 4 }}>
+                    {concept.concept_title || 'Untitled'}
+                  </h3>
+
+                  <div style={{ padding: '8px 12px', borderRadius: 8, background: '#FEF3C7', marginBottom: 8 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#D97706' }}>INTERN NOTE: </span>
+                    <span style={{ fontSize: 12, color: '#92400E' }}>{concept.escalation_note || '—'}</span>
+                  </div>
+
+                  <div style={{
+                    fontSize: 12, color: '#374151', lineHeight: 1.7,
+                    maxHeight: 120, overflow: 'hidden',
+                    background: '#fff', padding: 10, borderRadius: 8,
+                    border: '1px solid #f3f4f6',
+                    whiteSpace: 'pre-wrap',
+                  }}>
+                    {concept.text}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelCourse(concept.course_id)
+                        setSelPaper(concept.paper_number)
+                        setSelChapter(concept.chapter_number)
+                        setSelSubChapter(concept.sub_chapter_id)
+                        setSelBookPage(concept.book_page)
+                        setViewMode('page')
+                      }}
+                      style={{ padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', color: '#374151' }}
+                    >
+                      View with PDF →
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!user) return
+                        await supabase.from('concepts').update({
+                          needs_expert_review: false,
+                          escalation_note: null,
+                          escalated_by: null,
+                          escalated_at: null,
+                          is_verified: true,
+                          verified_by: user.id,
+                          verified_at: new Date().toISOString(),
+                          review_status: 'approved',
+                        }).eq('id', concept.id)
+                        void loadEscalated()
+                      }}
+                      style={{ padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer' }}
+                    >
+                      ✓ Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const note = window.prompt('Rejection reason:')
+                        if (!note) return
+                        await supabase.from('concepts').update({
+                          needs_expert_review: false,
+                          escalation_note: null,
+                          escalated_by: null,
+                          escalated_at: null,
+                          needs_work: true,
+                          rejection_note: note,
+                          review_status: 'rejected',
+                        }).eq('id', concept.id)
+                        void loadEscalated()
+                      }}
+                      style={{ padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: 'none', background: '#DC2626', color: '#fff', cursor: 'pointer' }}
+                    >
+                      ✗ Reject
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await supabase.from('concepts').update({
+                          needs_expert_review: false,
+                          escalation_note: null,
+                          escalated_by: null,
+                          escalated_at: null,
+                          review_status: 'draft',
+                        }).eq('id', concept.id)
+                        void loadEscalated()
+                      }}
+                      style={{ padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', color: '#6b7280' }}
+                    >
+                      Clear Flag
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        )}
       </div>
 
       {/* ═══ Drag Handle ═══ */}
