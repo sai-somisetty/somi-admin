@@ -27,6 +27,18 @@ interface ParagraphForm {
 
 const emptyForm: ParagraphForm = { heading: '', text: '', content_type: 'text', image_url: '' }
 
+/** Smart-extract API row (concepts or legacy paragraphs key) */
+interface SmartExtractConcept {
+  concept_title?: string | null
+  heading?: string | null
+  content_type?: string
+  text?: string
+  is_key_concept?: boolean
+  continues_from_previous?: boolean
+  continues_on_next?: boolean
+  order?: number
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function ContentPage() {
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -479,26 +491,64 @@ export default function ContentPage() {
       }
 
       const data = (await res.json()) as {
-        paragraphs?: Array<{
-          concept_title?: string | null
-          heading?: string | null
-          content_type?: string
-          text?: string
-          is_key_concept?: boolean
-        }>
+        success?: boolean
+        page_number?: number | null
+        concepts?: SmartExtractConcept[]
+        paragraphs?: SmartExtractConcept[]
       }
 
-      if (!data.paragraphs || data.paragraphs.length === 0) {
+      let concepts: SmartExtractConcept[] = [...(data.concepts ?? data.paragraphs ?? [])]
+
+      // Cross-page: merge first concept into last row on previous book page
+      if (concepts.length > 0 && concepts[0].continues_from_previous) {
+        const prevIdx = currentPageIndex - 1
+        if (prevIdx >= 0 && pageRange.length > 0) {
+          const prevBookPage = pageRange[prevIdx]
+          const { data: prevRows } = await supabase
+            .from('concepts')
+            .select('id, text, concept_title, order_index')
+            .eq('course_id', selCourse)
+            .eq('paper_number', selPaper)
+            .eq('chapter_number', selChapter)
+            .eq('sub_chapter_id', selSubChapter)
+            .eq('book_page', prevBookPage)
+            .order('order_index', { ascending: false })
+            .limit(1)
+
+          const lastExisting = prevRows?.[0] as { id: string; text: string; concept_title: string | null } | undefined
+          if (lastExisting) {
+            const mergedText = `${lastExisting.text}\n\n${concepts[0].text ?? ''}`
+            await supabase
+              .from('concepts')
+              .update({
+                text: mergedText,
+                concept_title: lastExisting.concept_title || concepts[0].concept_title || null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', lastExisting.id)
+            concepts.shift()
+          }
+        }
+      }
+
+      if (concepts.length === 0) {
         alert('No content found on this page')
         return
       }
 
-      const validTypes = new Set(['text', 'list', 'table', 'definition', 'image'])
+      const dbContentTypes = new Set(['text', 'list', 'table', 'definition', 'image'])
+      function normalizeContentType(t: string | undefined): 'text' | 'list' | 'table' | 'definition' | 'image' {
+        const s = String(t || 'text')
+        if (dbContentTypes.has(s)) return s as 'text' | 'list' | 'table' | 'definition' | 'image'
+        if (s === 'formula' || s === 'example') return 'text'
+        return 'text'
+      }
+
       const existingCount = paragraphs.length
       let savedCount = 0
-      for (let i = 0; i < data.paragraphs.length; i++) {
-        const p = data.paragraphs[i]
-        const ct = validTypes.has(String(p.content_type)) ? (p.content_type as 'text' | 'list' | 'table' | 'definition' | 'image') : 'text'
+      for (let i = 0; i < concepts.length; i++) {
+        const p = concepts[i]
+        const ct = normalizeContentType(p.content_type)
         const { error } = await supabase.from('concepts').insert({
           course_id: selCourse,
           paper_number: selPaper,
@@ -524,7 +574,7 @@ export default function ContentPage() {
 
       await loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
 
-      alert(`Saved ${savedCount} paragraphs from page ${selBookPage}`)
+      alert(`Saved ${savedCount} concept(s) from page ${selBookPage}`)
     } catch (err: unknown) {
       alert('Extract failed: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
