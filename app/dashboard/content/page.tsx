@@ -380,6 +380,10 @@ export default function ContentPage() {
     }
   }
 
+  function patchParagraph(id: string, patch: Partial<Pick<Concept, 'concept_title' | 'heading' | 'text' | 'content_type'>>) {
+    setParagraphs(prev => prev.map(p => (p.id === id ? { ...p, ...patch } : p)))
+  }
+
   async function startEdit(para: Concept) {
     if (user) {
       const result = await acquireLock(para.id, user.id)
@@ -1182,18 +1186,75 @@ export default function ContentPage() {
                             )}
                           </div>
                         )}
-                        {/* Text preview */}
-                        <div style={{ background: '#f9fafb', borderRadius: 6, padding: 10, marginBottom: 10, fontSize: 13, lineHeight: 1.6, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
-                          {isImage ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={para.image_url || para.text}
-                              alt="Concept"
-                              style={{ maxWidth: '100%', borderRadius: 6 }}
+                        {/* Inline edit fields */}
+                        <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <div>
+                            <label style={{ ...labelStyle, marginBottom: 2 }}>Concept title</label>
+                            <input
+                              value={para.concept_title || ''}
+                              onChange={e => patchParagraph(para.id, { concept_title: e.target.value })}
+                              onClick={e => e.stopPropagation()}
+                              placeholder="Concept title"
+                              style={inputStyle}
                             />
-                          ) : (
-                            para.text
-                          )}
+                          </div>
+                          <div>
+                            <label style={{ ...labelStyle, marginBottom: 2 }}>Heading</label>
+                            <input
+                              value={para.heading || ''}
+                              onChange={e => patchParagraph(para.id, { heading: e.target.value })}
+                              onClick={e => e.stopPropagation()}
+                              placeholder="Section heading (optional)"
+                              style={inputStyle}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ ...labelStyle, marginBottom: 2 }}>Content type</label>
+                            <select
+                              value={para.content_type || 'text'}
+                              onChange={e =>
+                                patchParagraph(para.id, {
+                                  content_type: e.target.value as Concept['content_type'],
+                                })}
+                              onClick={e => e.stopPropagation()}
+                              style={inputStyle}
+                            >
+                              <option value="text">text</option>
+                              <option value="list">list</option>
+                              <option value="table">table</option>
+                              <option value="definition">definition</option>
+                              <option value="image">image</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ ...labelStyle, marginBottom: 2 }}>Text / body</label>
+                            {isImage ? (
+                              <div onClick={e => e.stopPropagation()}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={para.image_url || para.text}
+                                  alt="Concept"
+                                  style={{ maxWidth: '100%', borderRadius: 6, marginBottom: 8 }}
+                                />
+                                <textarea
+                                  value={para.text}
+                                  onChange={e => patchParagraph(para.id, { text: e.target.value })}
+                                  onClick={e => e.stopPropagation()}
+                                  placeholder="Image URL or caption"
+                                  rows={3}
+                                  style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+                                />
+                              </div>
+                            ) : (
+                              <textarea
+                                value={para.text}
+                                onChange={e => patchParagraph(para.id, { text: e.target.value })}
+                                onClick={e => e.stopPropagation()}
+                                rows={8}
+                                style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+                              />
+                            )}
+                          </div>
                         </div>
 
                         {/* Actions */}
@@ -1201,7 +1262,8 @@ export default function ContentPage() {
                           {user?.role === 'intern' && !para.is_verified && !para.needs_expert_review && (
                             <button
                               type="button"
-                              onClick={async () => {
+                              onClick={async e => {
+                                e.stopPropagation()
                                 const note = window.prompt('What needs expert review? Describe the issue:')
                                 if (!note || !user || !selCourse || !selPaper || selChapter == null || !selSubChapter || !selBookPage) return
                                 await supabase.from('concepts').update({
@@ -1222,13 +1284,42 @@ export default function ContentPage() {
                               ⚠ Flag for Expert
                             </button>
                           )}
-                          <button onClick={() => startEdit(para)} style={actionBtn('#E67E22', 'white')}>✏️ Edit</button>
-                          <button onClick={() => moveParagraph(para.id, 'up')} disabled={idx === 0} style={actionBtn('#f3f4f6', 'var(--text)')}>↑</button>
-                          <button onClick={() => moveParagraph(para.id, 'down')} disabled={idx === paragraphs.length - 1} style={actionBtn('#f3f4f6', 'var(--text)')}>↓</button>
-                          <button onClick={() => moveToPage(para.id)} style={actionBtn('#eff6ff', '#2563eb')}>📄 Move</button>
+                          <button type="button" onClick={e => { e.stopPropagation(); startEdit(para) }} style={actionBtn('#E67E22', 'white')}>✎ Edit</button>
+                          <button type="button" onClick={e => { e.stopPropagation(); void moveParagraph(para.id, 'up') }} disabled={idx === 0} style={actionBtn('#f3f4f6', 'var(--text)')}>↑</button>
+                          <button type="button" onClick={e => { e.stopPropagation(); void moveParagraph(para.id, 'down') }} disabled={idx === paragraphs.length - 1} style={actionBtn('#f3f4f6', 'var(--text)')}>↓</button>
+                          <button type="button" onClick={e => { e.stopPropagation(); void moveToPage(para.id) }} style={actionBtn('#eff6ff', '#2563eb')}>↪ Move</button>
+                          <button
+                            type="button"
+                            onClick={async e => {
+                              e.stopPropagation()
+                              const row = paragraphs.find(p => p.id === para.id)
+                              if (!row) return
+                              const { error } = await supabase.from('concepts').update({
+                                concept_title: row.concept_title || null,
+                                text: row.text,
+                                heading: row.heading || null,
+                                content_type: row.content_type,
+                                updated_at: new Date().toISOString(),
+                              }).eq('id', para.id)
+                              if (error) {
+                                setSaveMsg('Error: ' + error.message)
+                                setTimeout(() => setSaveMsg(''), 3000)
+                                return
+                              }
+                              setSaveMsg('Saved!')
+                              setTimeout(() => setSaveMsg(''), 2000)
+                            }}
+                            style={{
+                              padding: '4px 10px', borderRadius: 6, fontSize: 11,
+                              fontWeight: 600, cursor: 'pointer',
+                              background: '#071739', color: '#E3C39D', border: 'none',
+                            }}
+                          >
+                            💾 Save
+                          </button>
                           <div style={{ flex: 1 }} />
                           <span style={{ fontSize: 11, color: 'var(--muted)' }}>pg {para.book_page}</span>
-                          <button onClick={() => deleteParagraph(para.id)} style={actionBtn('#fef2f2', '#dc2626')}>Delete</button>
+                          <button type="button" onClick={e => { e.stopPropagation(); void deleteParagraph(para.id) }} style={actionBtn('#fef2f2', '#dc2626')}>✕ Delete</button>
                         </div>
                       </div>
                     )}
