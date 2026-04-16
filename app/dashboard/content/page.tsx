@@ -38,6 +38,7 @@ interface SmartExtractConcept {
   continues_on_next?: boolean
   order?: number
   book_page?: number | null
+  image_url?: string | null
 }
 
 /** Preview row (editable before save) */
@@ -50,9 +51,15 @@ const DB_CONTENT_TYPES = new Set(['text', 'list', 'table', 'definition', 'image'
 
 function normalizeContentType(t: string | undefined): 'text' | 'list' | 'table' | 'definition' | 'image' {
   const s = String(t || 'text')
+  if (s === 'diagram') return 'text'
   if (DB_CONTENT_TYPES.has(s)) return s as 'text' | 'list' | 'table' | 'definition' | 'image'
   if (s === 'formula' || s === 'example') return 'text'
   return 'text'
+}
+
+function previewNeedsImageUpload(c: PreviewConcept): boolean {
+  const t = c.text || ''
+  return c.content_type === 'image' || t.includes('[IMAGE_NEEDED')
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -98,6 +105,7 @@ export default function ContentPage() {
   const [showPreview, setShowPreview] = useState(false)
   const [bulkProgress, setBulkProgress] = useState('')
   const [saveMsg, setSaveMsg] = useState('')
+  const [previewUploadingId, setPreviewUploadingId] = useState<string | null>(null)
 
   // ─── Load hierarchy ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -294,7 +302,8 @@ export default function ContentPage() {
         concept_title: form.heading || null,
         heading: form.heading || null,
         content_type: form.content_type,
-        text: form.content_type === 'image' ? (form.image_url || '') : form.text,
+        text: form.content_type === 'image' ? (form.text.trim() || form.image_url || '') : form.text,
+        image_url: form.content_type === 'image' ? (form.image_url || null) : null,
         is_key_concept: false,
         is_verified: false,
         needs_work: false,
@@ -335,11 +344,20 @@ export default function ContentPage() {
         return
       }
     }
+    const legacyImgUrl =
+      para.content_type === 'image' && para.text?.startsWith('http') ? para.text : ''
     setForm({
       heading: para.heading || para.concept_title || '',
-      text: para.text || '',
+      text:
+        para.content_type === 'image'
+          ? para.image_url
+            ? para.text && !para.text.startsWith('http')
+              ? para.text
+              : ''
+            : para.text || ''
+          : para.text || '',
       content_type: (para.content_type as 'text' | 'image') || 'text',
-      image_url: para.content_type === 'image' ? para.text : '',
+      image_url: para.image_url || legacyImgUrl || '',
     })
     setEditingId(para.id)
     setShowAddForm(true)
@@ -422,6 +440,40 @@ export default function ContentPage() {
     }
   }
 
+  async function uploadPreviewConceptImage(conceptId: string, file: File | null | undefined) {
+    if (!file?.type.startsWith('image/')) return
+    setPreviewUploadingId(conceptId)
+    try {
+      const rawExt = (file.name.split('.').pop() || 'png').replace(/[^a-z0-9]/gi, '')
+      const ext = rawExt.slice(0, 5) || 'png'
+      const path = `admin/${Date.now()}_${Math.random().toString(36).slice(2, 10)}.${ext}`
+      const { error } = await supabase.storage
+        .from('concept-images')
+        .upload(path, file, { contentType: file.type, upsert: false })
+      if (error) {
+        alert('Image upload failed: ' + error.message)
+        return
+      }
+      const { data: urlData } = supabase.storage.from('concept-images').getPublicUrl(path)
+      updatePreview(conceptId, 'image_url', urlData.publicUrl)
+    } finally {
+      setPreviewUploadingId(null)
+    }
+  }
+
+  async function onPreviewCardPaste(conceptId: string, e: React.ClipboardEvent) {
+    const items = e.clipboardData?.items
+    if (!items) return
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const f = item.getAsFile()
+        if (f) await uploadPreviewConceptImage(conceptId, f)
+        return
+      }
+    }
+  }
+
   // ─── Page navigation ─────────────────────────────────────────────────────
   function goToPage(direction: 'prev' | 'next') {
     const newIdx = direction === 'prev' ? currentPageIndex - 1 : currentPageIndex + 1
@@ -479,6 +531,7 @@ export default function ContentPage() {
         text: `${current.text || ''}\n\n${next.text || ''}`,
         concept_title: current.concept_title || next.concept_title || null,
         is_key_concept: Boolean(current.is_key_concept || next.is_key_concept),
+        image_url: current.image_url || next.image_url || null,
         id: `preview_merge_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
       }
       arr.splice(idx, 2, merged)
@@ -524,6 +577,7 @@ export default function ContentPage() {
         ...concept,
         text: part2,
         concept_title: '',
+        image_url: null,
         id: `${concept.id}_b`,
       }
 
@@ -574,6 +628,7 @@ export default function ContentPage() {
           heading: c.heading || null,
           content_type: ct,
           text: c.text || '',
+          image_url: c.image_url || null,
           is_key_concept: c.is_key_concept || false,
           is_verified: false,
           needs_work: false,
@@ -1006,7 +1061,11 @@ export default function ContentPage() {
                         <div style={{ background: '#f9fafb', borderRadius: 6, padding: 10, marginBottom: 10, fontSize: 13, lineHeight: 1.6, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
                           {isImage ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={para.text} alt="Screenshot" style={{ maxWidth: '100%', borderRadius: 6 }} />
+                            <img
+                              src={para.image_url || para.text}
+                              alt="Concept"
+                              style={{ maxWidth: '100%', borderRadius: 6 }}
+                            />
                           ) : (
                             para.text
                           )}
@@ -1072,10 +1131,14 @@ export default function ContentPage() {
                   </div>
 
                   {extractedPreview.map((concept, idx) => (
-                    <div key={concept.id} style={{
-                      padding: 14, marginBottom: 10, borderRadius: 10,
-                      background: '#fff', border: '1px solid #e5e7eb',
-                    }}>
+                    <div
+                      key={concept.id}
+                      onPaste={e => { void onPreviewCardPaste(concept.id, e) }}
+                      style={{
+                        padding: 14, marginBottom: 10, borderRadius: 10,
+                        background: '#fff', border: '1px solid #e5e7eb',
+                      }}
+                    >
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
                         <span style={{ fontSize: 20, fontWeight: 700, color: '#071739', opacity: 0.12, minWidth: 28, fontFamily: 'Georgia, serif' }}>
                           {idx + 1}
@@ -1102,8 +1165,10 @@ export default function ContentPage() {
                               <option value="definition">Definition</option>
                               <option value="list">List</option>
                               <option value="table">Table</option>
+                              <option value="diagram">Diagram (Mermaid)</option>
                               <option value="formula">Formula</option>
                               <option value="example">Example</option>
+                              <option value="image">Image</option>
                             </select>
                             <button
                               type="button"
@@ -1136,6 +1201,69 @@ export default function ContentPage() {
                             style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #fee2e2', background: '#fef2f2', cursor: 'pointer', fontSize: 11, color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
                         </div>
                       </div>
+
+                      {(previewNeedsImageUpload(concept) || concept.image_url) && (
+                        <div
+                          style={{
+                            marginBottom: 10,
+                            padding: 10,
+                            borderRadius: 8,
+                            background: '#f0f4ff',
+                            border: '1px dashed #4B6382',
+                          }}
+                        >
+                          <div style={{ fontSize: 11, fontWeight: 600, color: '#071739', marginBottom: 6 }}>
+                            Concept image
+                          </div>
+                          <p style={{ fontSize: 10, color: '#6b7280', margin: '0 0 8px' }}>
+                            Paste an image here or choose a file — uploads to Supabase bucket <code style={{ fontSize: 9 }}>concept-images</code>
+                          </p>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                            <label
+                              style={{
+                                padding: '6px 12px',
+                                borderRadius: 6,
+                                background: '#071739',
+                                color: '#E3C39D',
+                                fontSize: 11,
+                                fontWeight: 600,
+                                cursor: previewUploadingId === concept.id ? 'wait' : 'pointer',
+                                opacity: previewUploadingId === concept.id ? 0.6 : 1,
+                              }}
+                            >
+                              {previewUploadingId === concept.id ? 'Uploading…' : 'Choose image'}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                style={{ display: 'none' }}
+                                disabled={previewUploadingId === concept.id}
+                                onChange={e => {
+                                  const f = e.target.files?.[0]
+                                  if (f) void uploadPreviewConceptImage(concept.id, f)
+                                  e.target.value = ''
+                                }}
+                              />
+                            </label>
+                            <span style={{ fontSize: 10, color: '#9ca3af' }}>or paste while this card is focused</span>
+                          </div>
+                          {concept.image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={concept.image_url}
+                              alt={concept.concept_title || 'Uploaded concept'}
+                              style={{
+                                width: '100%',
+                                maxHeight: 220,
+                                objectFit: 'contain',
+                                borderRadius: 8,
+                                marginTop: 10,
+                                border: '1px solid rgba(7,23,57,0.08)',
+                                background: '#fff',
+                              }}
+                            />
+                          ) : null}
+                        </div>
+                      )}
 
                       <textarea
                         value={concept.text}

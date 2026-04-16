@@ -67,13 +67,55 @@ CROSS-PAGE CONTENT
 TEXT EXTRACTION RULES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Extract EXACT text — do NOT summarize or paraphrase
-- For tables: convert to markdown table format
 - For formulas: write as plain text (e.g., "Prime Cost = Direct Material + Direct Labour + Direct Expenses")
-- For diagrams/flowcharts: describe as "[DIAGRAM: Flowchart showing classification of contracts into Express, Implied, and Quasi contracts]"
 - Keep Section references (Section 2, Section 10, etc.)
 - Keep legal citations exactly as written
 - Include examples if present on the page
 - Do NOT include page headers, footers, or page numbers
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FLOWCHARTS & DIAGRAMS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+When you see a flowchart, diagram, or visual relationship:
+- Set content_type to "diagram"
+- In the "text" field, write the content as Mermaid syntax
+- Wrap Mermaid code in \`\`\`mermaid ... \`\`\` block (triple backtick fence)
+- Use clear labels that a student would understand
+- Add any explanatory text BEFORE the mermaid block
+
+Example — if textbook shows a flowchart of contract types:
+
+"text": "Types of Contracts based on formation:\n\n\`\`\`mermaid\nflowchart TD\n  A[Contract] --> B[Express Contract]\n  A --> C[Implied Contract]\n  A --> D[Quasi Contract]\n  B --> B1[Written]\n  B --> B2[Oral]\n  C --> C1[Implied by facts]\n  C --> C2[Implied by law]\n\`\`\`\n\nExpress contracts are directly stated, while implied contracts arise from circumstances."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TABLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+When you see a table or comparison:
+- Set content_type to "table"
+- Convert to proper markdown table format
+- Include ALL rows and columns exactly
+- Do NOT simplify or summarize table content
+
+Example:
+"text": "Difference between Void and Voidable Agreements:\n\n| Feature | Void Agreement | Voidable Contract |\n|---|---|---|\n| Legal status | No legal effect from start | Valid until cancelled |\n| Enforceability | Cannot be enforced | Can be enforced by one party |\n| Section | Section 2(g) | Section 2(i) |"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MATCH QUESTIONS / COMPARISON CHARTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+When you see "Match the following" or comparison grids:
+- Set content_type to "table"
+- Render as markdown table — NOT as a list
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IMAGES THAT CANNOT BE DESCRIBED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+If there is an image/photo that cannot be converted to
+text, table, or diagram (like a photo of a real document,
+a complex illustration):
+- Set content_type to "image"
+- In text, write: "[IMAGE_NEEDED: Brief description of what
+  the image shows and why it matters]"
+- The admin will upload a replacement image manually
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT — respond ONLY with this JSON:
@@ -84,7 +126,7 @@ OUTPUT FORMAT — respond ONLY with this JSON:
       "order": 1,
       "concept_title": "Essential Elements of a Valid Contract",
       "heading": "section heading if this starts a new section, else null",
-      "content_type": "text|definition|table|formula|list|example",
+      "content_type": "text|definition|table|formula|list|example|diagram|image",
       "text": "the complete extracted text for this concept — include ALL related paragraphs, points, and examples as one block",
       "is_key_concept": true,
       "continues_from_previous": false,

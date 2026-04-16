@@ -82,6 +82,8 @@ export interface Concept {
   heading: string | null
   content_type: 'text' | 'list' | 'table' | 'definition' | 'image'
   text: string
+  /** Public URL for replacement artwork when textbook image could not be OCR’d (optional) */
+  image_url?: string | null
   tenglish: string | null
   tenglish_variation_2: string | null
   tenglish_variation_3: string | null
