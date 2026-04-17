@@ -564,6 +564,7 @@ export default function ReviewPage() {
     const { data: conceptData } = await supabase
       .from('concepts')
       .select('*')
+      .not('tenglish', 'is', null)
       .order('created_at', { ascending: false })
 
     if (!conceptData) { setLoading(false); return }
