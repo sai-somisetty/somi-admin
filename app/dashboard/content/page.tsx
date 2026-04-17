@@ -126,6 +126,13 @@ export default function ContentPage() {
     loadHierarchy()
   }, [])
 
+  useEffect(() => {
+    if (saveMsg) {
+      const t = setTimeout(() => setSaveMsg(''), 5000)
+      return () => clearTimeout(t)
+    }
+  }, [saveMsg])
+
   async function loadHierarchy() {
     setLoading(true)
     const [{ data: co }, { data: pp }, { data: ch }, { data: sc }, { data: pg }] = await Promise.all([
@@ -646,6 +653,19 @@ export default function ContentPage() {
 
     try {
       const pendingPreview = extractedPreview.filter(c => !c.saved)
+      // If nothing pending (all individually saved), just clear preview
+      if (pendingPreview.length === 0) {
+        setExtractedPreview([])
+        setShowPreview(false)
+        setBulkProgress('')
+        if (selBookPage) {
+          await loadParagraphs(selCourse!, selPaper!, selChapter!, selSubChapter!, selBookPage)
+        }
+        setSaveMsg('All concepts already saved!')
+        setSaving(false)
+        return
+      }
+
       const bookPages = [...new Set(pendingPreview.map(c => c.book_page ?? selBookPage ?? 0).filter(bp => bp > 0))]
       const nextOrder = new Map<number, number>()
 
@@ -705,7 +725,14 @@ export default function ContentPage() {
       setExtractedPreview([])
       setShowPreview(false)
       setBulkProgress('')
-      setSaveMsg(`Saved ${savedCount} concepts!`)
+      const pagesSaved = [...new Set(pendingPreview.map(c => c.book_page ?? selBookPage ?? 0))]
+        .filter(p => p > 0)
+        .sort((a, b) => a - b)
+      setSaveMsg(
+        savedCount > 0
+          ? `Saved ${savedCount} concepts across pages ${pagesSaved.join(', ')}!`
+          : 'No new concepts were saved (check for errors).'
+      )
     } catch (err: unknown) {
       setSaveMsg('Error: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
@@ -1205,6 +1232,24 @@ export default function ContentPage() {
                         >
                           ⚠
                         </button>
+                      )}
+                      {para.needs_expert_review && (
+                        <span style={{
+                          padding: '1px 6px', borderRadius: 4, fontSize: 9,
+                          fontWeight: 700, background: '#FEF3C7', color: '#D97706',
+                          flexShrink: 0,
+                        }}>
+                          ⚠ FLAGGED
+                        </span>
+                      )}
+                      {(para.needs_work || para.review_status === 'rejected') && (
+                        <span style={{
+                          padding: '1px 6px', borderRadius: 4, fontSize: 9,
+                          fontWeight: 700, background: '#FEF2F2', color: '#DC2626',
+                          flexShrink: 0,
+                        }}>
+                          ✗ REJECTED
+                        </span>
                       )}
                       <StatusBadge concept={para} />
                       <span style={{ fontSize: 10, color: 'var(--muted)' }}>{isExpanded ? '▲' : '▼'}</span>
