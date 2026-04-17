@@ -121,15 +121,12 @@ const markdownBodyComponents: Components = {
 
 export function RenderedContent({ text, contentType }: { text: string; contentType?: string }) {
   const t = text || ''
-  const mc = extractMermaidCode(t, contentType)
-  const withoutMermaidFence = t.replace(/```mermaid[\s\S]*?```/g, '')
-  const isWholeBodyDiagram =
-    contentType === 'diagram' && mc.length > 0 && mc === t.trim()
-  const markdownSource = isWholeBodyDiagram ? '' : withoutMermaidFence
 
-  return (
-    <div style={{ fontSize: 13, lineHeight: 1.7, color: '#1f2937' }}>
-      {mc ? (
+  // If whole body is a diagram
+  const mc = extractMermaidCode(t, contentType)
+  if (contentType === 'diagram' && mc.length > 0 && mc === t.trim()) {
+    return (
+      <div style={{ fontSize: 13, lineHeight: 1.7, color: '#1f2937' }}>
         <div style={{
           margin: '8px 0', padding: 16, background: '#071739',
           borderRadius: 10, overflow: 'auto',
@@ -137,10 +134,35 @@ export function RenderedContent({ text, contentType }: { text: string; contentTy
         >
           <MermaidPreview code={mc} />
         </div>
-      ) : null}
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownBodyComponents}>
-        {markdownSource}
-      </ReactMarkdown>
+      </div>
+    )
+  }
+
+  // Split content into alternating text and mermaid blocks
+  const parts = t.split(/(```mermaid[\s\S]*?```)/g)
+
+  return (
+    <div style={{ fontSize: 13, lineHeight: 1.7, color: '#1f2937' }}>
+      {parts.map((part, i) => {
+        if (part.startsWith('```mermaid')) {
+          const code = part.replace(/```mermaid\n?/, '').replace(/\n?```$/, '')
+          return (
+            <div key={i} style={{
+              margin: '10px 0', padding: 16, background: '#071739',
+              borderRadius: 10, overflow: 'auto',
+            }}
+            >
+              <MermaidPreview code={code} />
+            </div>
+          )
+        }
+        if (!part.trim()) return null
+        return (
+          <ReactMarkdown key={i} remarkPlugins={[remarkGfm]} components={markdownBodyComponents}>
+            {part}
+          </ReactMarkdown>
+        )
+      })}
     </div>
   )
 }
