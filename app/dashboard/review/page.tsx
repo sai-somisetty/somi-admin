@@ -1,8 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { RenderedContent } from '@/components/RenderedContent'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
 import { incrementActivity } from '@/lib/concept-locks'
@@ -212,21 +211,15 @@ function ConceptCard({
                     <span style={{ fontSize: 10, fontWeight: 700, color: '#D97706' }}>
                       ESCALATION NOTE:
                     </span>
-                    <p style={{ fontSize: 12, color: '#92400E', marginTop: 2 }}>
-                      {concept.escalation_note}
-                    </p>
+                    <div style={{ fontSize: 12, color: '#92400E', marginTop: 2 }}>
+                      <RenderedContent text={concept.escalation_note || ''} />
+                    </div>
                   </div>
                 )}
 
                 {/* 1. ICMAI TEXT */}
                 <SectionBlock title="ICMAI Text">
-                  <textarea
-                    readOnly
-                    className="w-full text-sm leading-relaxed resize-none border-0 outline-none"
-                    style={{ color: 'var(--text)', background: 'transparent', fontFamily: 'inherit' }}
-                    rows={8}
-                    value={concept.text}
-                  />
+                  <RenderedContent text={concept.text || ''} contentType={concept.content_type} />
                 </SectionBlock>
 
                 {/* 2. MAMA'S TENGLISH — V1/V2/V3 tabs */}
@@ -247,95 +240,13 @@ function ConceptCard({
                     ))}
                   </div>
                   <div className="text-sm leading-relaxed max-w-none" style={{ color: 'var(--text)' }}>
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        table: ({ children }) => (
-                          <div style={{ overflowX: 'auto', marginBottom: 12 }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>{children}</table>
-                          </div>
-                        ),
-                        thead: ({ children }) => (
-                          <thead style={{ background: '#f3f4f6' }}>{children}</thead>
-                        ),
-                        th: ({ children }) => (
-                          <th style={{ border: '1px solid #e5e7eb', padding: '6px 10px', textAlign: 'left', fontWeight: 600, fontSize: 12 }}>{children}</th>
-                        ),
-                        td: ({ children }) => (
-                          <td style={{ border: '1px solid #e5e7eb', padding: '6px 10px', fontSize: 12 }}>{children}</td>
-                        ),
-                        ul: ({ children }) => (
-                          <ul style={{ paddingLeft: 20, marginBottom: 8 }}>{children}</ul>
-                        ),
-                        ol: ({ children }) => (
-                          <ol style={{ paddingLeft: 20, marginBottom: 8 }}>{children}</ol>
-                        ),
-                        li: ({ children }) => (
-                          <li style={{ marginBottom: 4 }}>{children}</li>
-                        ),
-                        h3: ({ children }) => (
-                          <h3 style={{ fontSize: 15, fontWeight: 700, margin: '12px 0 6px', color: 'var(--text)' }}>{children}</h3>
-                        ),
-                        h4: ({ children }) => (
-                          <h4 style={{ fontSize: 14, fontWeight: 600, margin: '10px 0 4px', color: 'var(--text)' }}>{children}</h4>
-                        ),
-                        strong: ({ children }) => (
-                          <strong style={{ fontWeight: 700, color: 'var(--text)' }}>{children}</strong>
-                        ),
-                        p: ({ children }) => (
-                          <p style={{ marginBottom: 8, lineHeight: 1.6 }}>{children}</p>
-                        ),
-                      }}
-                    >
-                      {activeText || '—'}
-                    </ReactMarkdown>
+                    <RenderedContent text={activeText || '—'} />
                   </div>
                   {activeEnglish ? (
                     <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e5e7eb' }}>
                       <span style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', letterSpacing: '0.08em' }}>ENGLISH</span>
                       <div className="text-sm leading-relaxed max-w-none mt-1" style={{ color: '#1f2937' }}>
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            table: ({ children }) => (
-                              <div style={{ overflowX: 'auto', marginBottom: 12 }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>{children}</table>
-                              </div>
-                            ),
-                            thead: ({ children }) => (
-                              <thead style={{ background: '#f3f4f6' }}>{children}</thead>
-                            ),
-                            th: ({ children }) => (
-                              <th style={{ border: '1px solid #e5e7eb', padding: '6px 10px', textAlign: 'left', fontWeight: 600, fontSize: 12 }}>{children}</th>
-                            ),
-                            td: ({ children }) => (
-                              <td style={{ border: '1px solid #e5e7eb', padding: '6px 10px', fontSize: 12 }}>{children}</td>
-                            ),
-                            ul: ({ children }) => (
-                              <ul style={{ paddingLeft: 20, marginBottom: 8 }}>{children}</ul>
-                            ),
-                            ol: ({ children }) => (
-                              <ol style={{ paddingLeft: 20, marginBottom: 8 }}>{children}</ol>
-                            ),
-                            li: ({ children }) => (
-                              <li style={{ marginBottom: 4 }}>{children}</li>
-                            ),
-                            h3: ({ children }) => (
-                              <h3 style={{ fontSize: 15, fontWeight: 700, margin: '12px 0 6px', color: '#1f2937' }}>{children}</h3>
-                            ),
-                            h4: ({ children }) => (
-                              <h4 style={{ fontSize: 14, fontWeight: 600, margin: '10px 0 4px', color: '#1f2937' }}>{children}</h4>
-                            ),
-                            strong: ({ children }) => (
-                              <strong style={{ fontWeight: 700, color: '#1f2937' }}>{children}</strong>
-                            ),
-                            p: ({ children }) => (
-                              <p style={{ marginBottom: 8, lineHeight: 1.6 }}>{children}</p>
-                            ),
-                          }}
-                        >
-                          {activeEnglish}
-                        </ReactMarkdown>
+                        <RenderedContent text={activeEnglish} />
                       </div>
                     </div>
                   ) : null}
@@ -347,13 +258,17 @@ function ConceptCard({
                     {concept.kitty_question && (
                       <div className="mb-3">
                         <p className="text-xs font-bold mb-1" style={{ color: 'var(--muted)' }}>Kitty's Question</p>
-                        <p className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>{concept.kitty_question}</p>
+                        <div className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>
+                          <RenderedContent text={concept.kitty_question || ''} />
+                        </div>
                       </div>
                     )}
                     {concept.mama_kitty_answer && (
                       <div>
                         <p className="text-xs font-bold mb-1" style={{ color: 'var(--muted)' }}>Mama's Answer</p>
-                        <p className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>{concept.mama_kitty_answer}</p>
+                        <div className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>
+                          <RenderedContent text={concept.mama_kitty_answer || ''} />
+                        </div>
                       </div>
                     )}
                   </SectionBlock>
@@ -362,9 +277,9 @@ function ConceptCard({
                 {/* 4. CHECK QUESTION */}
                 {concept.check_question && (
                   <SectionBlock title="Check Question">
-                    <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>
-                      {concept.check_question}
-                    </p>
+                    <div className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>
+                      <RenderedContent text={concept.check_question} />
+                    </div>
                     {opts && (
                       <div className="space-y-2 mb-3">
                         {opts.map((opt, i) => (
@@ -382,15 +297,16 @@ function ConceptCard({
                             >
                               {['A', 'B', 'C', 'D'][i]}
                             </span>
-                            <span
-                              className="text-sm"
+                            <div
+                              className="text-sm flex-1"
                               style={{
                                 color: concept.check_answer === i ? '#15803d' : 'var(--text)',
                                 fontWeight: concept.check_answer === i ? 600 : 400,
                               }}
                             >
-                              {opt}{concept.check_answer === i && ' ✓'}
-                            </span>
+                              <RenderedContent text={opt} />
+                              {concept.check_answer === i && ' ✓'}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -398,7 +314,9 @@ function ConceptCard({
                     {concept.check_explanation && (
                       <div className="rounded-lg p-3" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>
                         <p className="text-xs font-bold mb-1" style={{ color: '#2563eb' }}>Explanation</p>
-                        <p className="text-sm" style={{ color: '#1e40af' }}>{concept.check_explanation}</p>
+                        <div className="text-sm" style={{ color: '#1e40af' }}>
+                          <RenderedContent text={concept.check_explanation || ''} />
+                        </div>
                       </div>
                     )}
                   </SectionBlock>
@@ -411,13 +329,17 @@ function ConceptCard({
                       {concept.mama_response_correct && (
                         <div className="rounded-lg p-3" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
                           <p className="text-xs font-bold mb-1.5" style={{ color: '#16a34a' }}>✅ Correct</p>
-                          <p className="text-sm" style={{ color: '#14532d' }}>{concept.mama_response_correct}</p>
+                          <div className="text-sm" style={{ color: '#14532d' }}>
+                            <RenderedContent text={concept.mama_response_correct || ''} />
+                          </div>
                         </div>
                       )}
                       {concept.mama_response_wrong && (
                         <div className="rounded-lg p-3" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
                           <p className="text-xs font-bold mb-1.5" style={{ color: '#dc2626' }}>❌ Wrong</p>
-                          <p className="text-sm" style={{ color: '#7f1d1d' }}>{concept.mama_response_wrong}</p>
+                          <div className="text-sm" style={{ color: '#7f1d1d' }}>
+                            <RenderedContent text={concept.mama_response_wrong || ''} />
+                          </div>
                         </div>
                       )}
                     </div>
@@ -428,7 +350,9 @@ function ConceptCard({
                 {concept.needs_work && concept.rejection_note && (
                   <div className="rounded-lg p-3" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
                     <p className="text-xs font-bold mb-1" style={{ color: '#dc2626' }}>Previous Rejection Note</p>
-                    <p className="text-sm" style={{ color: '#7f1d1d' }}>{concept.rejection_note}</p>
+                    <div className="text-sm" style={{ color: '#7f1d1d' }}>
+                      <RenderedContent text={concept.rejection_note || ''} />
+                    </div>
                   </div>
                 )}
 

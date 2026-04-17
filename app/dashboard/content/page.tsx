@@ -1,9 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import type { Components } from 'react-markdown'
+import { RenderedContent } from '@/components/RenderedContent'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
 import { acquireLock, releaseLock, incrementActivity } from '@/lib/concept-locks'
@@ -68,120 +66,6 @@ function normalizeContentType(t: string | undefined): 'text' | 'list' | 'table' 
 function previewNeedsImageUpload(c: PreviewConcept): boolean {
   const t = c.text || ''
   return c.content_type === 'image' || t.includes('[IMAGE_NEEDED')
-}
-
-/** Mermaid from ```mermaid ... ``` fence, or whole body when content_type is diagram */
-function extractMermaidCode(text: string | undefined, contentType: string | undefined): string {
-  const t = text || ''
-  const fence = t.match(/```mermaid\n?([\s\S]*?)```/)
-  if (fence?.[1]?.trim()) return fence[1].trim()
-  if (contentType === 'diagram' && t.trim()) return t.trim()
-  return ''
-}
-
-let mermaidInitPromise: Promise<void> | null = null
-
-function ensureMermaidInitialized(): Promise<void> {
-  if (typeof window === 'undefined') return Promise.resolve()
-  const w = window as unknown as { mermaid?: { initialize: (c: unknown) => void; render: (id: string, code: string) => Promise<{ svg: string }> } }
-  if (w.mermaid?.initialize) return Promise.resolve()
-  if (mermaidInitPromise) return mermaidInitPromise
-  mermaidInitPromise = new Promise((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js'
-    script.async = true
-    script.onload = () => {
-      try {
-        const m = (window as unknown as { mermaid: { initialize: (c: unknown) => void } }).mermaid
-        m.initialize({
-          startOnLoad: false,
-          theme: 'base',
-          themeVariables: {
-            primaryColor: '#071739',
-            primaryTextColor: '#E3C39D',
-            primaryBorderColor: '#E3C39D',
-            lineColor: '#4B6382',
-            fontFamily: "'DM Sans', sans-serif",
-            fontSize: '12px',
-            mainBkg: '#071739',
-            nodeTextColor: '#E3C39D',
-          },
-        })
-        resolve()
-      } catch (e) {
-        reject(e)
-      }
-    }
-    script.onerror = () => reject(new Error('mermaid load failed'))
-    document.head.appendChild(script)
-  })
-  return mermaidInitPromise
-}
-
-function MermaidPreview({ code }: { code: string }) {
-  const [svg, setSvg] = useState('')
-  const id = useRef(`mermaid-${Math.random().toString(36).slice(2, 11)}`)
-
-  useEffect(() => {
-    if (!code.trim()) {
-      setSvg('')
-      return
-    }
-    let cancelled = false
-    ;(async () => {
-      try {
-        await ensureMermaidInitialized()
-        if (cancelled) return
-        const mermaid = (window as unknown as { mermaid: { render: (id: string, code: string) => Promise<{ svg: string }> } }).mermaid
-        const renderId = `${id.current}_${Math.random().toString(36).slice(2, 9)}`
-        const { svg: rendered } = await mermaid.render(renderId, code)
-        if (!cancelled) setSvg(rendered)
-      } catch {
-        if (!cancelled) {
-          setSvg(
-            '<p style="color:#E3C39D;font-size:12px;padding:8px">Diagram preview failed — will render in student app</p>'
-          )
-        }
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [code])
-
-  if (!code.trim()) return null
-
-  return (
-    // eslint-disable-next-line react/no-danger
-    <div dangerouslySetInnerHTML={{ __html: svg }} />
-  )
-}
-
-const markdownBodyComponents: Components = {
-  table: ({ children }) => (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, margin: '8px 0' }}>
-      {children}
-    </table>
-  ),
-  th: ({ children }) => (
-    <th style={{
-      background: '#071739', color: '#E3C39D', padding: '6px 10px',
-      textAlign: 'left', fontSize: 11, fontWeight: 600,
-      border: '1px solid #4B6382',
-    }}>
-      {children}
-    </th>
-  ),
-  td: ({ children }) => (
-    <td style={{
-      padding: '5px 10px', border: '1px solid #e5e7eb',
-      fontSize: 11, color: '#1f2937',
-    }}>
-      {children}
-    </td>
-  ),
-  p: ({ children }) => <p style={{ marginBottom: 8 }}>{children}</p>,
-  strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -1486,36 +1370,17 @@ export default function ContentPage() {
                                   />
                                 ) : (
                                   <div
-                                    style={{ marginTop: 8 }}
+                                    style={{
+                                      marginTop: 8, padding: 10, background: '#fafaf8', borderRadius: 8,
+                                      border: '1px solid #f3f4f6', cursor: 'text',
+                                    }}
                                     onClick={e => {
                                       e.stopPropagation()
                                       setInlineBodyEditId(para.id)
                                     }}
                                     title="Click to edit"
                                   >
-                                    {(() => {
-                                      const mc = extractMermaidCode(para.text, para.content_type as string)
-                                      return mc ? (
-                                        <div
-                                          style={{
-                                            margin: '8px 0', padding: 16, background: '#071739',
-                                            borderRadius: 10, overflow: 'auto',
-                                          }}
-                                        >
-                                          <MermaidPreview code={mc} />
-                                        </div>
-                                      ) : null
-                                    })()}
-                                    <div style={{
-                                      fontSize: 12, lineHeight: 1.7, color: '#1f2937',
-                                      padding: 10, background: '#fafaf8', borderRadius: 8,
-                                      border: '1px solid #f3f4f6', cursor: 'text',
-                                    }}
-                                    >
-                                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownBodyComponents}>
-                                        {(para.text || '').replace(/```mermaid[\s\S]*?```/g, '')}
-                                      </ReactMarkdown>
-                                    </div>
+                                    <RenderedContent text={para.text || ''} contentType={para.content_type as string} />
                                   </div>
                                 )}
                               </>
@@ -1795,22 +1660,7 @@ export default function ContentPage() {
                             background: '#fafaf8', cursor: 'text', minHeight: 60,
                           }}
                         >
-                          {(() => {
-                            const mc = extractMermaidCode(concept.text, concept.content_type)
-                            return mc ? (
-                              <div
-                                style={{
-                                  margin: '8px 0', padding: 16, background: '#071739',
-                                  borderRadius: 10, overflow: 'auto',
-                                }}
-                              >
-                                <MermaidPreview code={mc} />
-                              </div>
-                            ) : null
-                          })()}
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownBodyComponents}>
-                            {(concept.text || '').replace(/```mermaid[\s\S]*?```/g, '')}
-                          </ReactMarkdown>
+                          <RenderedContent text={concept.text || ''} contentType={concept.content_type} />
                         </div>
                       )}
                     </div>
@@ -2054,13 +1904,12 @@ export default function ContentPage() {
                   </div>
 
                   <div style={{
-                    fontSize: 12, color: '#374151', lineHeight: 1.7,
-                    maxHeight: 120, overflow: 'hidden',
+                    maxHeight: 120, overflow: 'auto',
                     background: '#fff', padding: 10, borderRadius: 8,
                     border: '1px solid #f3f4f6',
-                    whiteSpace: 'pre-wrap',
-                  }}>
-                    {concept.text}
+                  }}
+                  >
+                    <RenderedContent text={concept.text || ''} contentType={concept.content_type} />
                   </div>
 
                   <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
