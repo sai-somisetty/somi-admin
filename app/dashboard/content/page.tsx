@@ -45,8 +45,8 @@ interface SmartExtractConcept {
 interface PreviewConcept extends SmartExtractConcept {
   id: string
   book_page?: number
-  saved?: boolean
-  needs_expert_review?: boolean
+  /** User must pick Correct (draft) or COE (expert review) before Save All */
+  decision: 'none' | 'correct' | 'coe'
   escalation_note?: string | null
 }
 
@@ -592,6 +592,7 @@ export default function ContentPage() {
         is_key_concept: Boolean(current.is_key_concept || next.is_key_concept),
         image_url: current.image_url || next.image_url || null,
         id: `preview_merge_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        decision: 'none',
       }
       arr.splice(idx, 2, merged)
       return arr
@@ -631,6 +632,7 @@ export default function ContentPage() {
         ...concept,
         text: part1,
         id: `${concept.id}_a`,
+        decision: 'none',
       }
       const concept2: PreviewConcept = {
         ...concept,
@@ -638,6 +640,7 @@ export default function ContentPage() {
         concept_title: '',
         image_url: null,
         id: `${concept.id}_b`,
+        decision: 'none',
       }
 
       arr.splice(idx, 1, concept1, concept2)
@@ -648,25 +651,17 @@ export default function ContentPage() {
   async function saveAllPreviewed() {
     if (!selCourse || !selPaper || selChapter == null || !selSubChapter || !user) return
 
+    const undecided = extractedPreview.filter(c => (c.decision ?? 'none') === 'none')
+    if (undecided.length > 0) {
+      alert(`${undecided.length} concepts not marked yet. Mark all as Correct or COE before saving.`)
+      return
+    }
+
     setSaving(true)
     setSaveMsg('')
 
     try {
-      const pendingPreview = extractedPreview.filter(c => !c.saved)
-      // If nothing pending (all individually saved), just clear preview
-      if (pendingPreview.length === 0) {
-        setExtractedPreview([])
-        setShowPreview(false)
-        setBulkProgress('')
-        if (selBookPage) {
-          await loadParagraphs(selCourse!, selPaper!, selChapter!, selSubChapter!, selBookPage)
-        }
-        setSaveMsg('All concepts already saved!')
-        setSaving(false)
-        return
-      }
-
-      const bookPages = [...new Set(pendingPreview.map(c => c.book_page ?? selBookPage ?? 0).filter(bp => bp > 0))]
+      const bookPages = [...new Set(extractedPreview.map(c => c.book_page ?? selBookPage ?? 0).filter(bp => bp > 0))]
       const nextOrder = new Map<number, number>()
 
       for (const bp of bookPages) {
@@ -683,14 +678,18 @@ export default function ContentPage() {
         nextOrder.set(bp, existingRows?.[0]?.order_index ?? 0)
       }
 
-      let savedCount = 0
-      for (const c of pendingPreview) {
+      let savedCorrect = 0
+      let savedCoe = 0
+
+      for (const c of extractedPreview) {
         const bp = c.book_page ?? selBookPage
         if (bp == null) continue
         const cur = (nextOrder.get(bp) ?? 0) + 1
         nextOrder.set(bp, cur)
+
+        const isCoe = c.decision === 'coe'
         const ct = normalizeContentType(c.content_type)
-        const flagged = Boolean(c.needs_expert_review)
+
         const { error } = await supabase.from('concepts').insert({
           course_id: selCourse,
           paper_number: selPaper,
@@ -706,33 +705,38 @@ export default function ContentPage() {
           is_key_concept: c.is_key_concept || false,
           is_verified: false,
           needs_work: false,
-          review_status: flagged ? 'escalated' : 'draft',
-          needs_expert_review: flagged,
-          escalation_note: flagged ? (c.escalation_note || null) : null,
-          escalated_by: flagged ? user.id : null,
-          escalated_at: flagged ? new Date().toISOString() : null,
+          review_status: isCoe ? 'escalated' : 'draft',
+          needs_expert_review: isCoe,
+          escalation_note: isCoe ? (c.escalation_note || 'Needs expert review') : null,
+          escalated_by: isCoe ? user.id : null,
+          escalated_at: isCoe ? new Date().toISOString() : null,
           created_by: user.id,
           updated_at: new Date().toISOString(),
         })
-        if (!error) savedCount++
+
+        if (!error) {
+          if (isCoe) savedCoe++
+          else savedCorrect++
+        }
       }
 
-      if (savedCount > 0) await incrementActivity(user.id, 'concepts_entered', savedCount)
+      const total = savedCorrect + savedCoe
+      if (total > 0) await incrementActivity(user.id, 'concepts_entered', total)
 
       if (selBookPage) {
         await loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
       }
+
+      const { count } = await supabase
+        .from('concepts')
+        .select('id', { count: 'exact', head: true })
+        .eq('needs_expert_review', true)
+      setEscalatedCount(count ?? 0)
+
       setExtractedPreview([])
       setShowPreview(false)
       setBulkProgress('')
-      const pagesSaved = [...new Set(pendingPreview.map(c => c.book_page ?? selBookPage ?? 0))]
-        .filter(p => p > 0)
-        .sort((a, b) => a - b)
-      setSaveMsg(
-        savedCount > 0
-          ? `Saved ${savedCount} concepts across pages ${pagesSaved.join(', ')}!`
-          : 'No new concepts were saved (check for errors).'
-      )
+      setSaveMsg(`Saved ${savedCorrect} correct + ${savedCoe} COE = ${total} concepts`)
     } catch (err: unknown) {
       setSaveMsg('Error: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
@@ -822,6 +826,7 @@ export default function ContentPage() {
         book_page: selBookPage,
         id: `preview_${baseId}_${i}`,
         text: p.text ?? '',
+        decision: 'none' as const,
       }))
 
       setExtractedPreview(prev => [...prev, ...concepts])
@@ -930,6 +935,7 @@ export default function ContentPage() {
           book_page: c.book_page ?? pg,
           id: `preview_${Date.now()}_${pg}_${i}_${Math.random().toString(36).slice(2, 9)}`,
           text: c.text ?? '',
+          decision: 'none' as const,
         }))
 
         if (batchConcepts[0]?.continues_from_previous && acc.length > 0) {
@@ -963,6 +969,11 @@ export default function ContentPage() {
   }
 
   const displayBookPage = selBookPage ? selBookPage + pdfPageOffset : 0
+
+  const previewCorrectCount = extractedPreview.filter(c => c.decision === 'correct').length
+  const previewCoeCount = extractedPreview.filter(c => c.decision === 'coe').length
+  const previewUndecidedCount = extractedPreview.filter(c => (c.decision ?? 'none') === 'none').length
+  const previewAllDecided = previewUndecidedCount === 0 && extractedPreview.length > 0
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', userSelect: isDragging ? 'none' : 'auto' }}>
@@ -1181,30 +1192,6 @@ export default function ContentPage() {
                       </span>
                       {isImage && <span title="Image" style={{ fontSize: 12 }}>📷</span>}
                       {para.tenglish && <span title="Generated" style={{ fontSize: 12 }}>🤖</span>}
-                      <button
-                        type="button"
-                        onClick={async e => {
-                          e.stopPropagation()
-                          const row = paragraphs.find(p => p.id === para.id) ?? para
-                          const { error } = await supabase.from('concepts').update({
-                            concept_title: row.concept_title,
-                            text: row.text,
-                            heading: row.heading,
-                            content_type: row.content_type,
-                            updated_at: new Date().toISOString(),
-                          }).eq('id', para.id)
-                          if (!error) alert('Saved!')
-                          else alert('Save failed: ' + error.message)
-                        }}
-                        style={{
-                          padding: '2px 8px', borderRadius: 4, fontSize: 10,
-                          fontWeight: 600, cursor: 'pointer',
-                          background: '#071739', color: '#E3C39D', border: 'none',
-                          flexShrink: 0,
-                        }}
-                      >
-                        Save
-                      </button>
                       {!para.needs_expert_review && (
                         <button
                           type="button"
@@ -1394,30 +1381,46 @@ export default function ContentPage() {
                   marginTop: 16, padding: 16, background: '#f8f7f4',
                   borderRadius: 12, border: '2px solid #071739',
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                    <div>
-                      <h3 style={{ fontSize: 15, fontWeight: 700, color: '#071739', marginBottom: 2 }}>
-                        Review Extracted Content
-                      </h3>
-                      <p style={{ fontSize: 11, color: '#6b7280' }}>
-                        {extractedPreview.length} concepts · Edit titles, text, or delete before saving
-                      </p>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexShrink: 0 }}>
+                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      {extractedPreview.length} concepts ·
+                      <span style={{ color: '#16a34a', fontWeight: 600 }}> {previewCorrectCount} correct</span> ·
+                      <span style={{ color: '#D97706', fontWeight: 600 }}> {previewCoeCount} COE</span>
+                      {previewUndecidedCount > 0 && (
+                        <span style={{ color: '#DC2626', fontWeight: 600 }}> · {previewUndecidedCount} unmarked</span>
+                      )}
                     </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <button
+                        type="button"
+                        onClick={() => setExtractedPreview(prev => prev.map(c => ({ ...c, decision: 'correct' as const })))}
+                        style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #16a34a', background: '#f0fdf4', cursor: 'pointer', color: '#16a34a', fontWeight: 600 }}
+                      >
+                        ✓ All Correct
+                      </button>
                       <button
                         type="button"
                         onClick={() => { setExtractedPreview([]); setShowPreview(false); setBulkProgress(''); setSaveMsg('') }}
-                        style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', fontSize: 12, cursor: 'pointer', color: '#6b7280' }}
+                        style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', color: 'var(--text)' }}
                       >
                         Discard All
                       </button>
                       <button
                         type="button"
                         onClick={() => void saveAllPreviewed()}
-                        disabled={saving}
-                        style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: '#071739', color: '#E3C39D', fontSize: 12, fontWeight: 600, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.6 : 1 }}
+                        disabled={!previewAllDecided || saving}
+                        style={{
+                          fontSize: 11, padding: '4px 14px', borderRadius: 6, border: 'none',
+                          background: previewAllDecided ? '#071739' : '#e5e7eb',
+                          color: previewAllDecided ? '#E3C39D' : '#9ca3af',
+                          cursor: previewAllDecided ? 'pointer' : 'not-allowed',
+                          fontWeight: 600,
+                          opacity: saving ? 0.5 : 1,
+                        }}
                       >
-                        Save All ({extractedPreview.length}) to DB
+                        {saving ? 'Saving...' : previewAllDecided
+                          ? `Save All (${previewCorrectCount} correct + ${previewCoeCount} COE)`
+                          : `Mark all concepts first (${previewUndecidedCount} remaining)`}
                       </button>
                     </div>
                   </div>
@@ -1428,7 +1431,12 @@ export default function ContentPage() {
                       onPaste={e => { void onPreviewCardPaste(concept.id, e) }}
                       style={{
                         padding: 14, marginBottom: 10, borderRadius: 10,
-                        background: '#fff', border: '1px solid #e5e7eb',
+                        background: concept.decision === 'correct' ? '#f0fdf4'
+                          : concept.decision === 'coe' ? '#FFFDF5'
+                          : '#fff',
+                        border: concept.decision === 'correct' ? '1.5px solid #16a34a'
+                          : concept.decision === 'coe' ? '1.5px solid #FDE68A'
+                          : '1.5px solid #e5e7eb',
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
@@ -1476,85 +1484,36 @@ export default function ContentPage() {
                             </button>
                           </div>
                         </div>
-                        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (!selCourse || selPaper == null || selChapter == null || !selSubChapter || !user || selBookPage == null) return
-                              const c = concept
-                              if (c.saved) return
-                              const existingCount = paragraphs.length
-                              const ct = normalizeContentType(c.content_type)
-                              const flagged = Boolean(c.needs_expert_review)
-                              const { error } = await supabase.from('concepts').insert({
-                                course_id: selCourse,
-                                paper_number: selPaper,
-                                chapter_number: selChapter,
-                                sub_chapter_id: selSubChapter,
-                                book_page: c.book_page ?? selBookPage,
-                                order_index: existingCount + 1,
-                                concept_title: c.concept_title || null,
-                                heading: c.heading || null,
-                                content_type: ct,
-                                text: c.text || '',
-                                is_key_concept: c.is_key_concept || false,
-                                image_url: c.image_url || null,
-                                created_by: user.id,
-                                is_verified: false,
-                                needs_work: false,
-                                review_status: flagged ? 'escalated' : 'draft',
-                                needs_expert_review: flagged,
-                                escalation_note: flagged ? (c.escalation_note || null) : null,
-                                escalated_by: flagged ? user.id : null,
-                                escalated_at: flagged ? new Date().toISOString() : null,
-                                updated_at: new Date().toISOString(),
-                              })
-                              if (!error) {
-                                updatePreview(concept.id, 'saved', true)
-                                await loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
-                              } else {
-                                alert('Save failed: ' + error.message)
-                              }
-                            }}
-                            disabled={!!concept.saved}
-                            title="Save this concept"
-                            style={{
-                              padding: '4px 10px', height: 26, borderRadius: 6,
-                              border: concept.saved ? '1px solid #16a34a' : '1px solid #071739',
-                              background: concept.saved ? '#f0fdf4' : '#071739',
-                              cursor: concept.saved ? 'default' : 'pointer',
-                              fontSize: 9, fontWeight: 700,
-                              color: concept.saved ? '#16a34a' : '#E3C39D',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}
-                          >
-                            {concept.saved ? '✓ Saved' : 'Save'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const note = window.prompt('Flag note:')
-                              if (note) {
-                                setExtractedPreview(prev =>
-                                  prev.map(x =>
-                                    x.id === concept.id
-                                      ? { ...x, needs_expert_review: true, escalation_note: note }
-                                      : x
-                                  )
-                                )
-                              }
-                            }}
-                            title="Flag for expert review"
-                            style={{
-                              width: 26, height: 26, borderRadius: 6,
-                              border: '1px solid #FDE68A',
-                              background: concept.needs_expert_review ? '#FEF3C7' : '#fff',
-                              cursor: 'pointer', fontSize: 11, color: '#D97706',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}
-                          >
-                            ⚠
-                          </button>
+                        <div style={{ display: 'flex', gap: 4, flexShrink: 0, alignItems: 'center' }}>
+                          {/* Decision buttons — must pick one for each row before Save All */}
+                          <div style={{ display: 'flex', gap: 2, marginRight: 8 }}>
+                            <button
+                              type="button"
+                              onClick={() => updatePreview(concept.id, 'decision', 'correct')}
+                              style={{
+                                padding: '4px 12px', borderRadius: '6px 0 0 6px', fontSize: 11,
+                                fontWeight: 600, cursor: 'pointer', border: 'none',
+                                background: concept.decision === 'correct' ? '#16a34a' : '#f3f4f6',
+                                color: concept.decision === 'correct' ? '#fff' : '#9ca3af',
+                                transition: 'all 0.15s',
+                              }}
+                            >
+                              ✓ Correct
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updatePreview(concept.id, 'decision', 'coe')}
+                              style={{
+                                padding: '4px 12px', borderRadius: '0 6px 6px 0', fontSize: 11,
+                                fontWeight: 600, cursor: 'pointer', border: 'none',
+                                background: concept.decision === 'coe' ? '#D97706' : '#f3f4f6',
+                                color: concept.decision === 'coe' ? '#fff' : '#9ca3af',
+                                transition: 'all 0.15s',
+                              }}
+                            >
+                              ⚠ COE
+                            </button>
+                          </div>
                           <button type="button" onClick={() => movePreview(idx, -1)} disabled={idx === 0}
                             style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', fontSize: 11, opacity: idx === 0 ? 0.3 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>↑</button>
                           <button type="button" onClick={() => movePreview(idx, 1)} disabled={idx === extractedPreview.length - 1}
@@ -1648,29 +1607,6 @@ export default function ContentPage() {
                       />
                     </div>
                   ))}
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTop: '1px solid #e5e7eb' }}>
-                    <span style={{ fontSize: 12, color: '#6b7280' }}>
-                      {extractedPreview.length} concepts ready to save
-                    </span>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button
-                        type="button"
-                        onClick={() => { setExtractedPreview([]); setShowPreview(false); setBulkProgress(''); setSaveMsg('') }}
-                        style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', fontSize: 12, cursor: 'pointer' }}
-                      >
-                        Discard
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void saveAllPreviewed()}
-                        disabled={saving}
-                        style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: '#071739', color: '#E3C39D', fontSize: 13, fontWeight: 600, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.6 : 1 }}
-                      >
-                        Save All to Database
-                      </button>
-                    </div>
-                  </div>
                 </div>
               )}
 
