@@ -45,6 +45,9 @@ interface SmartExtractConcept {
 interface PreviewConcept extends SmartExtractConcept {
   id: string
   book_page?: number
+  saved?: boolean
+  needs_expert_review?: boolean
+  escalation_note?: string | null
 }
 
 const DB_CONTENT_TYPES = new Set(['text', 'list', 'table', 'definition', 'image'])
@@ -642,7 +645,8 @@ export default function ContentPage() {
     setSaveMsg('')
 
     try {
-      const bookPages = [...new Set(extractedPreview.map(c => c.book_page ?? selBookPage ?? 0).filter(bp => bp > 0))]
+      const pendingPreview = extractedPreview.filter(c => !c.saved)
+      const bookPages = [...new Set(pendingPreview.map(c => c.book_page ?? selBookPage ?? 0).filter(bp => bp > 0))]
       const nextOrder = new Map<number, number>()
 
       for (const bp of bookPages) {
@@ -660,12 +664,13 @@ export default function ContentPage() {
       }
 
       let savedCount = 0
-      for (const c of extractedPreview) {
+      for (const c of pendingPreview) {
         const bp = c.book_page ?? selBookPage
         if (bp == null) continue
         const cur = (nextOrder.get(bp) ?? 0) + 1
         nextOrder.set(bp, cur)
         const ct = normalizeContentType(c.content_type)
+        const flagged = Boolean(c.needs_expert_review)
         const { error } = await supabase.from('concepts').insert({
           course_id: selCourse,
           paper_number: selPaper,
@@ -681,7 +686,11 @@ export default function ContentPage() {
           is_key_concept: c.is_key_concept || false,
           is_verified: false,
           needs_work: false,
-          review_status: 'draft',
+          review_status: flagged ? 'escalated' : 'draft',
+          needs_expert_review: flagged,
+          escalation_note: flagged ? (c.escalation_note || null) : null,
+          escalated_by: flagged ? user.id : null,
+          escalated_at: flagged ? new Date().toISOString() : null,
           created_by: user.id,
           updated_at: new Date().toISOString(),
         })
@@ -1145,6 +1154,58 @@ export default function ContentPage() {
                       </span>
                       {isImage && <span title="Image" style={{ fontSize: 12 }}>📷</span>}
                       {para.tenglish && <span title="Generated" style={{ fontSize: 12 }}>🤖</span>}
+                      <button
+                        type="button"
+                        onClick={async e => {
+                          e.stopPropagation()
+                          const row = paragraphs.find(p => p.id === para.id) ?? para
+                          const { error } = await supabase.from('concepts').update({
+                            concept_title: row.concept_title,
+                            text: row.text,
+                            heading: row.heading,
+                            content_type: row.content_type,
+                            updated_at: new Date().toISOString(),
+                          }).eq('id', para.id)
+                          if (!error) alert('Saved!')
+                          else alert('Save failed: ' + error.message)
+                        }}
+                        style={{
+                          padding: '2px 8px', borderRadius: 4, fontSize: 10,
+                          fontWeight: 600, cursor: 'pointer',
+                          background: '#071739', color: '#E3C39D', border: 'none',
+                          flexShrink: 0,
+                        }}
+                      >
+                        Save
+                      </button>
+                      {!para.needs_expert_review && (
+                        <button
+                          type="button"
+                          onClick={async e => {
+                            e.stopPropagation()
+                            const note = window.prompt('What needs expert review?')
+                            if (!note || !user) return
+                            await supabase.from('concepts').update({
+                              needs_expert_review: true,
+                              escalation_note: note,
+                              escalated_by: user.id,
+                              escalated_at: new Date().toISOString(),
+                              review_status: 'escalated',
+                            }).eq('id', para.id)
+                            if (selCourse && selPaper != null && selChapter != null && selSubChapter && selBookPage != null) {
+                              await loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
+                            }
+                          }}
+                          style={{
+                            padding: '2px 8px', borderRadius: 4, fontSize: 10,
+                            fontWeight: 600, cursor: 'pointer',
+                            background: '#FEF3C7', color: '#D97706', border: 'none',
+                            flexShrink: 0,
+                          }}
+                        >
+                          ⚠
+                        </button>
+                      )}
                       <StatusBadge concept={para} />
                       <span style={{ fontSize: 10, color: 'var(--muted)' }}>{isExpanded ? '▲' : '▼'}</span>
                     </div>
@@ -1257,62 +1318,8 @@ export default function ContentPage() {
                           </div>
                         </div>
 
-                        {/* Actions — order: Save | Flag | Edit | ↑ | ↓ | Move | Delete */}
+                        {/* Actions — Edit | ↑ | ↓ | Move | Delete (Save + ⚠ live in collapsed header) */}
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <button
-                            type="button"
-                            onClick={async e => {
-                              e.stopPropagation()
-                              const row = paragraphs.find(p => p.id === para.id)
-                              if (!row) return
-                              const { error } = await supabase.from('concepts').update({
-                                concept_title: row.concept_title,
-                                text: row.text,
-                                heading: row.heading,
-                                content_type: row.content_type,
-                                updated_at: new Date().toISOString(),
-                              }).eq('id', para.id)
-                              if (!error) {
-                                alert('Saved!')
-                              } else {
-                                alert('Save failed: ' + error.message)
-                              }
-                            }}
-                            style={{
-                              padding: '4px 10px', borderRadius: 6, fontSize: 11,
-                              fontWeight: 600, cursor: 'pointer',
-                              background: '#071739', color: '#E3C39D', border: 'none',
-                            }}
-                          >
-                            Save
-                          </button>
-                          {!para.is_verified && !para.needs_expert_review && (
-                            <button
-                              type="button"
-                              onClick={async e => {
-                                e.stopPropagation()
-                                const note = window.prompt('What needs expert review? Describe the issue:')
-                                if (!note || !user) return
-                                await supabase.from('concepts').update({
-                                  needs_expert_review: true,
-                                  escalation_note: note,
-                                  escalated_by: user.id,
-                                  escalated_at: new Date().toISOString(),
-                                  review_status: 'escalated',
-                                }).eq('id', para.id)
-                                if (selCourse && selPaper != null && selChapter != null && selSubChapter && selBookPage != null) {
-                                  await loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
-                                }
-                              }}
-                              style={{
-                                padding: '4px 10px', borderRadius: 6, fontSize: 11,
-                                fontWeight: 600, cursor: 'pointer',
-                                background: '#FEF3C7', color: '#D97706', border: 'none',
-                              }}
-                            >
-                              ⚠ Flag
-                            </button>
-                          )}
                           <button type="button" onClick={e => { e.stopPropagation(); startEdit(para) }} style={actionBtn('#E67E22', 'white')}>✎ Edit</button>
                           <button type="button" onClick={e => { e.stopPropagation(); void moveParagraph(para.id, 'up') }} disabled={idx === 0} style={actionBtn('#f3f4f6', 'var(--text)')}>↑</button>
                           <button type="button" onClick={e => { e.stopPropagation(); void moveParagraph(para.id, 'down') }} disabled={idx === paragraphs.length - 1} style={actionBtn('#f3f4f6', 'var(--text)')}>↓</button>
@@ -1425,6 +1432,84 @@ export default function ContentPage() {
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!selCourse || selPaper == null || selChapter == null || !selSubChapter || !user || selBookPage == null) return
+                              const c = concept
+                              if (c.saved) return
+                              const existingCount = paragraphs.length
+                              const ct = normalizeContentType(c.content_type)
+                              const flagged = Boolean(c.needs_expert_review)
+                              const { error } = await supabase.from('concepts').insert({
+                                course_id: selCourse,
+                                paper_number: selPaper,
+                                chapter_number: selChapter,
+                                sub_chapter_id: selSubChapter,
+                                book_page: c.book_page ?? selBookPage,
+                                order_index: existingCount + 1,
+                                concept_title: c.concept_title || null,
+                                heading: c.heading || null,
+                                content_type: ct,
+                                text: c.text || '',
+                                is_key_concept: c.is_key_concept || false,
+                                image_url: c.image_url || null,
+                                created_by: user.id,
+                                is_verified: false,
+                                needs_work: false,
+                                review_status: flagged ? 'escalated' : 'draft',
+                                needs_expert_review: flagged,
+                                escalation_note: flagged ? (c.escalation_note || null) : null,
+                                escalated_by: flagged ? user.id : null,
+                                escalated_at: flagged ? new Date().toISOString() : null,
+                                updated_at: new Date().toISOString(),
+                              })
+                              if (!error) {
+                                updatePreview(concept.id, 'saved', true)
+                                await loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
+                              } else {
+                                alert('Save failed: ' + error.message)
+                              }
+                            }}
+                            disabled={!!concept.saved}
+                            title="Save this concept"
+                            style={{
+                              width: 26, height: 26, borderRadius: 6,
+                              border: concept.saved ? '1px solid #16a34a' : '1px solid #071739',
+                              background: concept.saved ? '#f0fdf4' : '#071739',
+                              cursor: concept.saved ? 'default' : 'pointer',
+                              fontSize: 9, fontWeight: 700,
+                              color: concept.saved ? '#16a34a' : '#E3C39D',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}
+                          >
+                            {concept.saved ? '✓' : 'S'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const note = window.prompt('Flag note:')
+                              if (note) {
+                                setExtractedPreview(prev =>
+                                  prev.map(x =>
+                                    x.id === concept.id
+                                      ? { ...x, needs_expert_review: true, escalation_note: note }
+                                      : x
+                                  )
+                                )
+                              }
+                            }}
+                            title="Flag for expert review"
+                            style={{
+                              width: 26, height: 26, borderRadius: 6,
+                              border: '1px solid #FDE68A',
+                              background: concept.needs_expert_review ? '#FEF3C7' : '#fff',
+                              cursor: 'pointer', fontSize: 11, color: '#D97706',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}
+                          >
+                            ⚠
+                          </button>
                           <button type="button" onClick={() => movePreview(idx, -1)} disabled={idx === 0}
                             style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', fontSize: 11, opacity: idx === 0 ? 0.3 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>↑</button>
                           <button type="button" onClick={() => movePreview(idx, 1)} disabled={idx === extractedPreview.length - 1}
