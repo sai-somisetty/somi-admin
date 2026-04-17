@@ -65,6 +65,93 @@ function previewNeedsImageUpload(c: PreviewConcept): boolean {
   return c.content_type === 'image' || t.includes('[IMAGE_NEEDED')
 }
 
+/** Mermaid from ```mermaid ... ``` fence, or whole body when content_type is diagram */
+function extractMermaidCode(text: string | undefined, contentType: string | undefined): string {
+  const t = text || ''
+  const fence = t.match(/```mermaid\n?([\s\S]*?)```/)
+  if (fence?.[1]?.trim()) return fence[1].trim()
+  if (contentType === 'diagram' && t.trim()) return t.trim()
+  return ''
+}
+
+let mermaidInitPromise: Promise<void> | null = null
+
+function ensureMermaidInitialized(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve()
+  const w = window as unknown as { mermaid?: { initialize: (c: unknown) => void; render: (id: string, code: string) => Promise<{ svg: string }> } }
+  if (w.mermaid?.initialize) return Promise.resolve()
+  if (mermaidInitPromise) return mermaidInitPromise
+  mermaidInitPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js'
+    script.async = true
+    script.onload = () => {
+      try {
+        const m = (window as unknown as { mermaid: { initialize: (c: unknown) => void } }).mermaid
+        m.initialize({
+          startOnLoad: false,
+          theme: 'base',
+          themeVariables: {
+            primaryColor: '#071739',
+            primaryTextColor: '#E3C39D',
+            primaryBorderColor: '#E3C39D',
+            lineColor: '#4B6382',
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: '12px',
+            mainBkg: '#071739',
+            nodeTextColor: '#E3C39D',
+          },
+        })
+        resolve()
+      } catch (e) {
+        reject(e)
+      }
+    }
+    script.onerror = () => reject(new Error('mermaid load failed'))
+    document.head.appendChild(script)
+  })
+  return mermaidInitPromise
+}
+
+function MermaidPreview({ code }: { code: string }) {
+  const [svg, setSvg] = useState('')
+  const id = useRef(`mermaid-${Math.random().toString(36).slice(2, 11)}`)
+
+  useEffect(() => {
+    if (!code.trim()) {
+      setSvg('')
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        await ensureMermaidInitialized()
+        if (cancelled) return
+        const mermaid = (window as unknown as { mermaid: { render: (id: string, code: string) => Promise<{ svg: string }> } }).mermaid
+        const renderId = `${id.current}_${Math.random().toString(36).slice(2, 9)}`
+        const { svg: rendered } = await mermaid.render(renderId, code)
+        if (!cancelled) setSvg(rendered)
+      } catch {
+        if (!cancelled) {
+          setSvg(
+            '<p style="color:#E3C39D;font-size:12px;padding:8px">Diagram preview failed — will render in student app</p>'
+          )
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [code])
+
+  if (!code.trim()) return null
+
+  return (
+    // eslint-disable-next-line react/no-danger
+    <div dangerouslySetInnerHTML={{ __html: svg }} />
+  )
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function ContentPage() {
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -1339,13 +1426,29 @@ export default function ContentPage() {
                                 />
                               </div>
                             ) : (
-                              <textarea
-                                value={para.text}
-                                onChange={e => patchParagraph(para.id, { text: e.target.value })}
-                                onClick={e => e.stopPropagation()}
-                                rows={8}
-                                style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
-                              />
+                              <>
+                                {(() => {
+                                  const mermaidCode = extractMermaidCode(para.text, para.content_type as string)
+                                  return mermaidCode ? (
+                                    <div
+                                      onClick={e => e.stopPropagation()}
+                                      style={{
+                                        margin: '8px 0', padding: 16, background: '#071739',
+                                        borderRadius: 10, overflow: 'auto',
+                                      }}
+                                    >
+                                      <MermaidPreview code={mermaidCode} />
+                                    </div>
+                                  ) : null
+                                })()}
+                                <textarea
+                                  value={para.text}
+                                  onChange={e => patchParagraph(para.id, { text: e.target.value })}
+                                  onClick={e => e.stopPropagation()}
+                                  rows={8}
+                                  style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+                                />
+                              </>
                             )}
                           </div>
                         </div>
@@ -1594,6 +1697,20 @@ export default function ContentPage() {
                         </div>
                       )}
 
+                      {(() => {
+                        const mermaidCode = extractMermaidCode(concept.text, concept.content_type)
+                        return mermaidCode ? (
+                          <div
+                            onClick={e => e.stopPropagation()}
+                            style={{
+                              margin: '8px 0', padding: 16, background: '#071739',
+                              borderRadius: 10, overflow: 'auto',
+                            }}
+                          >
+                            <MermaidPreview code={mermaidCode} />
+                          </div>
+                        ) : null
+                      })()}
                       <textarea
                         value={concept.text}
                         onChange={e => updatePreview(concept.id, 'text', e.target.value)}
