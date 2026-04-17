@@ -1257,37 +1257,8 @@ export default function ContentPage() {
                           </div>
                         </div>
 
-                        {/* Actions */}
+                        {/* Actions — order: Save | Flag | Edit | ↑ | ↓ | Move | Delete */}
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                          {user?.role === 'intern' && !para.is_verified && !para.needs_expert_review && (
-                            <button
-                              type="button"
-                              onClick={async e => {
-                                e.stopPropagation()
-                                const note = window.prompt('What needs expert review? Describe the issue:')
-                                if (!note || !user || !selCourse || !selPaper || selChapter == null || !selSubChapter || !selBookPage) return
-                                await supabase.from('concepts').update({
-                                  needs_expert_review: true,
-                                  escalation_note: note,
-                                  escalated_by: user.id,
-                                  escalated_at: new Date().toISOString(),
-                                  review_status: 'escalated',
-                                }).eq('id', para.id)
-                                reloadCurrentPage()
-                              }}
-                              style={{
-                                padding: '4px 10px', borderRadius: 6, fontSize: 11,
-                                fontWeight: 600, cursor: 'pointer',
-                                background: '#FEF3C7', color: '#D97706', border: 'none',
-                              }}
-                            >
-                              ⚠ Flag for Expert
-                            </button>
-                          )}
-                          <button type="button" onClick={e => { e.stopPropagation(); startEdit(para) }} style={actionBtn('#E67E22', 'white')}>✎ Edit</button>
-                          <button type="button" onClick={e => { e.stopPropagation(); void moveParagraph(para.id, 'up') }} disabled={idx === 0} style={actionBtn('#f3f4f6', 'var(--text)')}>↑</button>
-                          <button type="button" onClick={e => { e.stopPropagation(); void moveParagraph(para.id, 'down') }} disabled={idx === paragraphs.length - 1} style={actionBtn('#f3f4f6', 'var(--text)')}>↓</button>
-                          <button type="button" onClick={e => { e.stopPropagation(); void moveToPage(para.id) }} style={actionBtn('#eff6ff', '#2563eb')}>↪ Move</button>
                           <button
                             type="button"
                             onClick={async e => {
@@ -1295,19 +1266,17 @@ export default function ContentPage() {
                               const row = paragraphs.find(p => p.id === para.id)
                               if (!row) return
                               const { error } = await supabase.from('concepts').update({
-                                concept_title: row.concept_title || null,
+                                concept_title: row.concept_title,
                                 text: row.text,
-                                heading: row.heading || null,
+                                heading: row.heading,
                                 content_type: row.content_type,
                                 updated_at: new Date().toISOString(),
                               }).eq('id', para.id)
-                              if (error) {
-                                setSaveMsg('Error: ' + error.message)
-                                setTimeout(() => setSaveMsg(''), 3000)
-                                return
+                              if (!error) {
+                                alert('Saved!')
+                              } else {
+                                alert('Save failed: ' + error.message)
                               }
-                              setSaveMsg('Saved!')
-                              setTimeout(() => setSaveMsg(''), 2000)
                             }}
                             style={{
                               padding: '4px 10px', borderRadius: 6, fontSize: 11,
@@ -1315,11 +1284,42 @@ export default function ContentPage() {
                               background: '#071739', color: '#E3C39D', border: 'none',
                             }}
                           >
-                            💾 Save
+                            Save
                           </button>
+                          {user?.role === 'intern' && !para.is_verified && !para.needs_expert_review && (
+                            <button
+                              type="button"
+                              onClick={async e => {
+                                e.stopPropagation()
+                                const note = window.prompt('What needs expert review? Describe the issue:')
+                                if (!note || !user) return
+                                await supabase.from('concepts').update({
+                                  needs_expert_review: true,
+                                  escalation_note: note,
+                                  escalated_by: user.id,
+                                  escalated_at: new Date().toISOString(),
+                                  review_status: 'escalated',
+                                }).eq('id', para.id)
+                                if (selCourse && selPaper != null && selChapter != null && selSubChapter && selBookPage != null) {
+                                  await loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
+                                }
+                              }}
+                              style={{
+                                padding: '4px 10px', borderRadius: 6, fontSize: 11,
+                                fontWeight: 600, cursor: 'pointer',
+                                background: '#FEF3C7', color: '#D97706', border: 'none',
+                              }}
+                            >
+                              ⚠ Flag
+                            </button>
+                          )}
+                          <button type="button" onClick={e => { e.stopPropagation(); startEdit(para) }} style={actionBtn('#E67E22', 'white')}>✎ Edit</button>
+                          <button type="button" onClick={e => { e.stopPropagation(); void moveParagraph(para.id, 'up') }} disabled={idx === 0} style={actionBtn('#f3f4f6', 'var(--text)')}>↑</button>
+                          <button type="button" onClick={e => { e.stopPropagation(); void moveParagraph(para.id, 'down') }} disabled={idx === paragraphs.length - 1} style={actionBtn('#f3f4f6', 'var(--text)')}>↓</button>
+                          <button type="button" onClick={e => { e.stopPropagation(); void moveToPage(para.id) }} style={actionBtn('#eff6ff', '#2563eb')}>↪ Move</button>
+                          <button type="button" onClick={e => { e.stopPropagation(); void deleteParagraph(para.id) }} style={actionBtn('#fef2f2', '#dc2626')}>✕ Delete</button>
                           <div style={{ flex: 1 }} />
                           <span style={{ fontSize: 11, color: 'var(--muted)' }}>pg {para.book_page}</span>
-                          <button type="button" onClick={e => { e.stopPropagation(); void deleteParagraph(para.id) }} style={actionBtn('#fef2f2', '#dc2626')}>✕ Delete</button>
                         </div>
                       </div>
                     )}
