@@ -8,7 +8,7 @@ import { AuthUser } from '@/lib/types'
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: '📊', roles: ['admin', 'expert', 'intern'] },
   { href: '/dashboard/content', label: 'Add Content', icon: '✏️', roles: ['admin', 'expert', 'intern'] },
-  { href: '/dashboard/generate', label: 'Generate Queue', icon: '🤖', roles: ['admin', 'expert', 'intern'] },
+  { href: '/dashboard/generate', label: 'Generate Queue', icon: '🤖', roles: ['admin'] },
   { href: '/dashboard/review', label: 'Review Queue', icon: '✅', roles: ['admin', 'expert'] },
   { href: '/dashboard/import', label: 'Bulk Import', icon: '📥', roles: ['admin'] },
   { href: '/dashboard/users', label: 'Users', icon: '👥', roles: ['admin'] },

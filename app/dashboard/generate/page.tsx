@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
 import { incrementActivity } from '@/lib/concept-locks'
@@ -23,6 +24,7 @@ interface ConceptGenState {
 }
 
 export default function GenerateQueuePage() {
+  const router = useRouter()
   const [user, setUser] = useState<AuthUser | null>(null)
   const [groups, setGroups] = useState<ChapterGroup[]>([])
   const [loading, setLoading] = useState(true)
@@ -71,8 +73,12 @@ export default function GenerateQueuePage() {
   useEffect(() => {
     const u = getStoredUser()
     setUser(u)
+    if (u?.role !== 'admin') {
+      router.replace('/dashboard')
+      return
+    }
     loadData()
-  }, [loadData])
+  }, [loadData, router])
 
   async function generateOne(concept: Concept): Promise<boolean> {
     try {

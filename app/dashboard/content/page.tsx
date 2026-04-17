@@ -1286,7 +1286,7 @@ export default function ContentPage() {
                           >
                             Save
                           </button>
-                          {user?.role === 'intern' && !para.is_verified && !para.needs_expert_review && (
+                          {!para.is_verified && !para.needs_expert_review && (
                             <button
                               type="button"
                               onClick={async e => {
