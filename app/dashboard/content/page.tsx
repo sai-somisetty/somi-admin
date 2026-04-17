@@ -1,6 +1,9 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import type { Components } from 'react-markdown'
 import { supabase } from '@/lib/supabase'
 import { getStoredUser } from '@/lib/auth'
 import { acquireLock, releaseLock, incrementActivity } from '@/lib/concept-locks'
@@ -48,6 +51,8 @@ interface PreviewConcept extends SmartExtractConcept {
   /** User must pick Correct (draft) or COE (expert review) before Save All */
   decision: 'none' | 'correct' | 'coe'
   escalation_note?: string | null
+  /** True while editing raw markdown in preview card */
+  editing?: boolean
 }
 
 const DB_CONTENT_TYPES = new Set(['text', 'list', 'table', 'definition', 'image'])
@@ -152,6 +157,33 @@ function MermaidPreview({ code }: { code: string }) {
   )
 }
 
+const markdownBodyComponents: Components = {
+  table: ({ children }) => (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, margin: '8px 0' }}>
+      {children}
+    </table>
+  ),
+  th: ({ children }) => (
+    <th style={{
+      background: '#071739', color: '#E3C39D', padding: '6px 10px',
+      textAlign: 'left', fontSize: 11, fontWeight: 600,
+      border: '1px solid #4B6382',
+    }}>
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td style={{
+      padding: '5px 10px', border: '1px solid #e5e7eb',
+      fontSize: 11, color: '#1f2937',
+    }}>
+      {children}
+    </td>
+  ),
+  p: ({ children }) => <p style={{ marginBottom: 8 }}>{children}</p>,
+  strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function ContentPage() {
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -179,6 +211,7 @@ export default function ContentPage() {
   const [form, setForm] = useState<ParagraphForm>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [inlineBodyEditId, setInlineBodyEditId] = useState<string | null>(null)
   const [lockHolder, setLockHolder] = useState<string | null>(null)
 
   // PDF
@@ -317,6 +350,10 @@ export default function ContentPage() {
       setParagraphs([])
     }
   }, [selCourse, selPaper, selChapter, selSubChapter, selBookPage, loadParagraphs])
+
+  useEffect(() => {
+    setInlineBodyEditId(null)
+  }, [expandedId])
 
   async function loadEscalated() {
     setLoadingEscalated(true)
@@ -680,6 +717,7 @@ export default function ContentPage() {
         image_url: current.image_url || next.image_url || null,
         id: `preview_merge_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
         decision: 'none',
+        editing: false,
       }
       arr.splice(idx, 2, merged)
       return arr
@@ -720,6 +758,7 @@ export default function ContentPage() {
         text: part1,
         id: `${concept.id}_a`,
         decision: 'none',
+        editing: false,
       }
       const concept2: PreviewConcept = {
         ...concept,
@@ -728,6 +767,7 @@ export default function ContentPage() {
         image_url: null,
         id: `${concept.id}_b`,
         decision: 'none',
+        editing: false,
       }
 
       arr.splice(idx, 1, concept1, concept2)
@@ -914,6 +954,7 @@ export default function ContentPage() {
         id: `preview_${baseId}_${i}`,
         text: p.text ?? '',
         decision: 'none' as const,
+        editing: false,
       }))
 
       setExtractedPreview(prev => [...prev, ...concepts])
@@ -1023,6 +1064,7 @@ export default function ContentPage() {
           id: `preview_${Date.now()}_${pg}_${i}_${Math.random().toString(36).slice(2, 9)}`,
           text: c.text ?? '',
           decision: 'none' as const,
+          editing: false,
         }))
 
         if (batchConcepts[0]?.continues_from_previous && acc.length > 0) {
@@ -1427,27 +1469,55 @@ export default function ContentPage() {
                               </div>
                             ) : (
                               <>
-                                {(() => {
-                                  const mermaidCode = extractMermaidCode(para.text, para.content_type as string)
-                                  return mermaidCode ? (
-                                    <div
-                                      onClick={e => e.stopPropagation()}
-                                      style={{
-                                        margin: '8px 0', padding: 16, background: '#071739',
-                                        borderRadius: 10, overflow: 'auto',
-                                      }}
+                                {inlineBodyEditId === para.id ? (
+                                  <textarea
+                                    value={para.text}
+                                    onChange={e => patchParagraph(para.id, { text: e.target.value })}
+                                    onBlur={() => setInlineBodyEditId(null)}
+                                    autoFocus
+                                    onClick={e => e.stopPropagation()}
+                                    rows={Math.min(12, Math.max(3, (para.text || '').split('\n').length + 1))}
+                                    style={{
+                                      width: '100%', fontSize: 12, lineHeight: 1.7, color: '#1f2937',
+                                      border: '1px solid #071739', borderRadius: 8, padding: 10,
+                                      resize: 'vertical', outline: 'none', background: '#fafaf8',
+                                      fontFamily: 'monospace',
+                                    }}
+                                  />
+                                ) : (
+                                  <div
+                                    style={{ marginTop: 8 }}
+                                    onClick={e => {
+                                      e.stopPropagation()
+                                      setInlineBodyEditId(para.id)
+                                    }}
+                                    title="Click to edit"
+                                  >
+                                    {(() => {
+                                      const mc = extractMermaidCode(para.text, para.content_type as string)
+                                      return mc ? (
+                                        <div
+                                          style={{
+                                            margin: '8px 0', padding: 16, background: '#071739',
+                                            borderRadius: 10, overflow: 'auto',
+                                          }}
+                                        >
+                                          <MermaidPreview code={mc} />
+                                        </div>
+                                      ) : null
+                                    })()}
+                                    <div style={{
+                                      fontSize: 12, lineHeight: 1.7, color: '#1f2937',
+                                      padding: 10, background: '#fafaf8', borderRadius: 8,
+                                      border: '1px solid #f3f4f6', cursor: 'text',
+                                    }}
                                     >
-                                      <MermaidPreview code={mermaidCode} />
+                                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownBodyComponents}>
+                                        {(para.text || '').replace(/```mermaid[\s\S]*?```/g, '')}
+                                      </ReactMarkdown>
                                     </div>
-                                  ) : null
-                                })()}
-                                <textarea
-                                  value={para.text}
-                                  onChange={e => patchParagraph(para.id, { text: e.target.value })}
-                                  onClick={e => e.stopPropagation()}
-                                  rows={8}
-                                  style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
-                                />
+                                  </div>
+                                )}
                               </>
                             )}
                           </div>
@@ -1697,31 +1767,52 @@ export default function ContentPage() {
                         </div>
                       )}
 
-                      {(() => {
-                        const mermaidCode = extractMermaidCode(concept.text, concept.content_type)
-                        return mermaidCode ? (
-                          <div
-                            onClick={e => e.stopPropagation()}
-                            style={{
-                              margin: '8px 0', padding: 16, background: '#071739',
-                              borderRadius: 10, overflow: 'auto',
-                            }}
-                          >
-                            <MermaidPreview code={mermaidCode} />
-                          </div>
-                        ) : null
-                      })()}
-                      <textarea
-                        value={concept.text}
-                        onChange={e => updatePreview(concept.id, 'text', e.target.value)}
-                        rows={Math.min(10, Math.max(3, (concept.text || '').split('\n').length + 1))}
-                        style={{
-                          width: '100%', fontSize: 12, lineHeight: 1.7, color: '#1f2937',
-                          border: '1px solid #f3f4f6', borderRadius: 8, padding: 10,
-                          resize: 'vertical', outline: 'none', background: '#fafaf8',
-                          fontFamily: 'inherit',
-                        }}
-                      />
+                      {concept.editing ? (
+                        <textarea
+                          value={concept.text || ''}
+                          onChange={e => updatePreview(concept.id, 'text', e.target.value)}
+                          onBlur={() => updatePreview(concept.id, 'editing', false)}
+                          autoFocus
+                          onClick={e => e.stopPropagation()}
+                          rows={Math.min(12, Math.max(3, (concept.text || '').split('\n').length + 1))}
+                          style={{
+                            width: '100%', fontSize: 12, lineHeight: 1.7, color: '#1f2937',
+                            border: '1px solid #071739', borderRadius: 8, padding: 10,
+                            resize: 'vertical', outline: 'none', background: '#fafaf8',
+                            fontFamily: 'monospace',
+                          }}
+                        />
+                      ) : (
+                        <div
+                          onClick={e => {
+                            e.stopPropagation()
+                            updatePreview(concept.id, 'editing', true)
+                          }}
+                          title="Click to edit"
+                          style={{
+                            fontSize: 12, lineHeight: 1.7, color: '#1f2937',
+                            border: '1px solid #f3f4f6', borderRadius: 8, padding: 10,
+                            background: '#fafaf8', cursor: 'text', minHeight: 60,
+                          }}
+                        >
+                          {(() => {
+                            const mc = extractMermaidCode(concept.text, concept.content_type)
+                            return mc ? (
+                              <div
+                                style={{
+                                  margin: '8px 0', padding: 16, background: '#071739',
+                                  borderRadius: 10, overflow: 'auto',
+                                }}
+                              >
+                                <MermaidPreview code={mc} />
+                              </div>
+                            ) : null
+                          })()}
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownBodyComponents}>
+                            {(concept.text || '').replace(/```mermaid[\s\S]*?```/g, '')}
+                          </ReactMarkdown>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
