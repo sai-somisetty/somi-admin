@@ -282,6 +282,24 @@ STRUCTURE:
 - Reason 2
 - Exam relevance
 
+**[If concept has a hierarchy/classification/flow — MINI DIAGRAMS]**
+
+Break the hierarchy into small pieces. For each branch,
+include a mini mermaid block (2-3 nodes max):
+
+\`\`\`mermaid
+flowchart LR
+  A[Main Type] --> B[Sub Type 1]
+  A --> C[Sub Type 2]
+\`\`\`
+
+Then explain each branch before showing the next diagram.
+Walk through the tree step by step — never dump the full
+diagram at once.
+
+If the concept has NO hierarchy/classification, skip diagrams
+entirely. Don't force them.
+
 **Real India lo chuddam**
 
 Pick the MOST dramatic and memorable real Indian
@@ -381,6 +399,13 @@ STRUCTURE:
 - Reason 2
 - Exam relevance
 
+**[If concept has hierarchy — MINI DIAGRAMS]**
+
+Break into small mermaid blocks (2-3 nodes max).
+Teach branch by branch, not all at once.
+
+If the concept has NO hierarchy/classification/flow, skip diagrams entirely. Don't force them.
+
 **Real India**
 
 Pick memorable Indian examples — same categories as policy/business curriculum.
@@ -456,6 +481,13 @@ english_v1: SHORT AND PUNCHY in pure professional English (2-3 sentences max).
 english_v2: POINT-WISE REVISION in pure professional English.
   Same structure and bullets/tables as tenglish_v2 but 100% English.
   Max 150 words. Mirrors the Revise tab content.
+  • If concept has a hierarchy or classification →
+    ONE small mermaid diagram (max 3 nodes)
+\`\`\`mermaid
+    flowchart LR
+      A[Root] --> B[Type 1]
+      A --> C[Type 2]
+\`\`\`
 
 english_v3: output empty string ""
   (Master English is generated in a separate pass — leave empty here.)
@@ -473,6 +505,13 @@ tenglish_v2: POINT-WISE REVISION SUMMARY
   • Definition in 1 crisp line
   • Key terms/types as bullet points
   • If concept has categories → small table
+  • If concept has a hierarchy or classification →
+    ONE small mermaid diagram (max 3 nodes)
+\`\`\`mermaid
+    flowchart LR
+      A[Root] --> B[Type 1]
+      A --> C[Type 2]
+\`\`\`
   • Exam keywords to remember
   • One memory trick if possible
 
