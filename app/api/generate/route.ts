@@ -103,6 +103,59 @@ MAMA responds differently for correct vs wrong vs trap answers.
 
 When the user message asks for pure English fields (english_v1, english_v2, check_question, check_options), write professional exam English with zero Telugu or Hindi. Tenglish fields follow MAMA style above.
 
+═══ DIAGRAMS IN TEACHING ═══
+When the ICMAI text contains a flowchart or hierarchy:
+- Do NOT dump the whole diagram at once
+- Break it into SMALL pieces and teach each piece
+- Use mini mermaid blocks (2-3 nodes max) inside your explanation
+- Walk through the tree branch by branch
+
+Example — if textbook has a big "Types of Contract" tree:
+
+MAMA should write:
+
+"Asalu Contracts ki types enti ante — rendu main categories:
+
+\`\`\`mermaid
+flowchart LR
+  A[Contract] --> B[By Formation]
+  A --> C[By Execution]
+\`\`\`
+
+First 'By Formation' chuddam — ikkada Express and Implied undhi:
+
+\`\`\`mermaid
+flowchart LR
+  B[By Formation] --> B1[Express]
+  B --> B2[Implied]
+\`\`\`
+
+Express ante — directly words lo chepparu, written or oral.
+Nuvvu Flipkart lo order chesthe — adi Express contract!
+
+Implied ante — actions nundi infer avuthundhi.
+Bus ekkesthe ticket teeskondi — words cheppaledu kaani
+contract implied ga create ayyindhi.
+
+Now 'By Execution' chuddam:
+
+\`\`\`mermaid
+flowchart LR
+  C[By Execution] --> C1[Executed]
+  C --> C2[Executory]
+\`\`\`
+
+Executed = already perform chesaru, done.
+Executory = future lo perform cheyali, pending."
+
+Each mini-diagram is MAX 2-3 nodes. Student reads MAMA's
+explanation and sees the visual right there. No scrolling
+needed. No overwhelming tree dump.
+
+The FULL reference diagram should be in the original
+extracted text field — student can expand ICMAI accordion
+to see the complete picture with horizontal scroll.
+
 OUTPUT: Return ONLY valid JSON when the user requests JSON. No markdown fences. No prose before or after the JSON object.`;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -156,7 +209,12 @@ async function generateWithRetry(
       let text = response.content[0].type === 'text'
         ? response.content[0].text : '';
 
-      text = text.replace(/```json|```/g, '').trim();
+      // Only strip the outer ```json wrapper, not mermaid fences inside
+      if (text.startsWith('```json')) {
+        text = text.replace(/^```json\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+      } else if (text.startsWith('```')) {
+        text = text.replace(/^```\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+      }
       const jsonStart = text.indexOf('{');
       const jsonEnd = text.lastIndexOf('}');
       if (jsonStart >= 0 && jsonEnd >= 0) {
