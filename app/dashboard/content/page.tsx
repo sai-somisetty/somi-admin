@@ -1474,7 +1474,7 @@ export default function ContentPage() {
                             disabled={!!concept.saved}
                             title="Save this concept"
                             style={{
-                              width: 26, height: 26, borderRadius: 6,
+                              padding: '4px 10px', height: 26, borderRadius: 6,
                               border: concept.saved ? '1px solid #16a34a' : '1px solid #071739',
                               background: concept.saved ? '#f0fdf4' : '#071739',
                               cursor: concept.saved ? 'default' : 'pointer',
@@ -1483,7 +1483,7 @@ export default function ContentPage() {
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}
                           >
-                            {concept.saved ? '✓' : 'S'}
+                            {concept.saved ? '✓ Saved' : 'Save'}
                           </button>
                           <button
                             type="button"
