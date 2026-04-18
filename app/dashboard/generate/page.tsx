@@ -86,6 +86,7 @@ export default function GenerateQueuePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: concept.id,
           icmai_text: concept.text,
           concept_title: concept.concept_title || '',
           chapter: `${concept.chapter_number}`,
