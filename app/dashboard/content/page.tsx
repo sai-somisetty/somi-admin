@@ -465,13 +465,26 @@ export default function ContentPage() {
   }
 
   async function moveToPage(id: string) {
-    const newPage = prompt('Move to which book page number?')
-    if (!newPage || parseInt(newPage) <= 0) return
-    await supabase.from('concepts').update({
-      book_page: parseInt(newPage),
-      updated_at: new Date().toISOString(),
-    }).eq('id', id)
-    reloadCurrentPage()
+    const action = window.prompt(
+      'Move to:\n1 = Different page\n2 = Different sub-chapter\n\nEnter 1 or 2:'
+    )
+    if (action === '1') {
+      const newPage = window.prompt('Move to which book page?')
+      if (!newPage || parseInt(newPage) <= 0) return
+      await supabase.from('concepts').update({
+        book_page: parseInt(newPage),
+        updated_at: new Date().toISOString(),
+      }).eq('id', id)
+      reloadCurrentPage()
+    } else if (action === '2') {
+      const newSc = window.prompt('Move to which sub-chapter? (e.g. 1.2, 1.3)')
+      if (!newSc?.trim()) return
+      await supabase.from('concepts').update({
+        sub_chapter_id: newSc.trim(),
+        updated_at: new Date().toISOString(),
+      }).eq('id', id)
+      reloadCurrentPage()
+    }
   }
 
   // ─── Image paste handler ─────────────────────────────────────────────────
