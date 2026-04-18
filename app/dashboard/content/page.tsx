@@ -1419,7 +1419,33 @@ export default function ContentPage() {
                           <button type="button" onClick={e => { e.stopPropagation(); startEdit(para) }} style={actionBtn('#E67E22', 'white')}>✎ Edit</button>
                           <button type="button" onClick={e => { e.stopPropagation(); void moveParagraph(para.id, 'up') }} disabled={idx === 0} style={actionBtn('#f3f4f6', 'var(--text)')}>↑</button>
                           <button type="button" onClick={e => { e.stopPropagation(); void moveParagraph(para.id, 'down') }} disabled={idx === paragraphs.length - 1} style={actionBtn('#f3f4f6', 'var(--text)')}>↓</button>
-                          <button type="button" onClick={e => { e.stopPropagation(); void moveToPage(para.id) }} style={actionBtn('#eff6ff', '#2563eb')}>↪ Move</button>
+                          <button type="button" onClick={async (e) => {
+                            e.stopPropagation()
+                            const action = window.prompt(
+                              'Move to:\n1 = Different page\n2 = Different sub-chapter\n\nEnter 1 or 2:'
+                            )
+                            if (action === '1') {
+                              const newPage = window.prompt('Move to which book page?')
+                              if (newPage) {
+                                await supabase.from('concepts')
+                                  .update({ book_page: parseInt(newPage) })
+                                  .eq('id', para.id)
+                                if (selCourse && selPaper != null && selChapter != null && selSubChapter && selBookPage != null) {
+                                  await loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
+                                }
+                              }
+                            } else if (action === '2') {
+                              const newSc = window.prompt('Move to which sub-chapter? (e.g. 1.2, 1.3)')
+                              if (newSc) {
+                                await supabase.from('concepts')
+                                  .update({ sub_chapter_id: newSc })
+                                  .eq('id', para.id)
+                                if (selCourse && selPaper != null && selChapter != null && selSubChapter && selBookPage != null) {
+                                  await loadParagraphs(selCourse, selPaper, selChapter, selSubChapter, selBookPage)
+                                }
+                              }
+                            }
+                          }} style={actionBtn('#eff6ff', '#2563eb')}>↪ Move</button>
                           <button type="button" onClick={e => { e.stopPropagation(); void deleteParagraph(para.id) }} style={actionBtn('#fef2f2', '#dc2626')}>✕ Delete</button>
                           <div style={{ flex: 1 }} />
                           <span style={{ fontSize: 11, color: 'var(--muted)' }}>pg {para.book_page}</span>
