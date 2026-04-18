@@ -217,14 +217,13 @@ export default function ContentPage() {
   const hasNext = currentPageIndex < totalPages - 1
 
   // ─── Load paragraphs when page changes ───────────────────────────────────
-  const loadParagraphs = useCallback(async (courseId: string, paperNum: number, chapterNum: number, subChapterId: string, bookPage: number) => {
+  const loadParagraphs = useCallback(async (courseId: string, paperNum: number, chapterNum: number, _subChapterId: string, bookPage: number) => {
     const { data } = await supabase
       .from('concepts')
       .select('*')
       .eq('course_id', courseId)
       .eq('paper_number', paperNum)
       .eq('chapter_number', chapterNum)
-      .eq('sub_chapter_id', subChapterId)
       .eq('book_page', bookPage)
       .order('order_index')
     setParagraphs(data || [])
