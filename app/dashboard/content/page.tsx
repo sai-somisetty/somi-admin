@@ -40,6 +40,13 @@ interface SmartExtractConcept {
   order?: number
   book_page?: number | null
   image_url?: string | null
+  // RAG / Knowledge Graph metadata
+  section_references?: string[]
+  act_references?: string[]
+  case_references?: string[]
+  keywords?: string[]
+  prerequisite_concepts?: string[]
+  related_concepts?: string[]
 }
 
 /** Preview row (editable before save) */
@@ -723,6 +730,12 @@ export default function ContentPage() {
           escalated_at: isCoe ? new Date().toISOString() : null,
           created_by: user.id,
           updated_at: new Date().toISOString(),
+          section_references: c.section_references || [],
+          act_references: c.act_references || [],
+          case_references: c.case_references || [],
+          keywords: c.keywords || [],
+          prerequisite_concepts: c.prerequisite_concepts || [],
+          related_concepts: c.related_concepts || [],
         })
 
         if (!error) {
