@@ -5,6 +5,8 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // SYSTEM PROMPT — MAMA (Tenglish CMA tutor)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -436,6 +438,64 @@ Do NOT return JSON — plain markdown only.`,
     cleaned = text;
   }
   return cleaned.trim();
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ENGLISH CONVERSION — Gemini Flash
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function generateEnglishFromTenglish(
+  tenglishV3: string,
+  concept_title: string,
+): Promise<{ v2_english: string; v3_english: string }> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: `CONCEPT: ${concept_title}
+
+TENGLISH VERSION (source of truth):
+${tenglishV3}
+
+Convert to English. Return JSON with two fields:
+
+{
+  "v2_english": "Bullet point revision summary. Same points as Tenglish but pure English. Max 150 words.",
+  "v3_english": "Full English version. SAME structure, SAME headings, SAME bullets, SAME tables, SAME mermaid diagrams. ONLY change Telugu words to English."
+}
+
+CRITICAL:
+- SAME content, zero additions or removals
+- Keep mermaid blocks exactly as-is
+- Keep tables exactly as-is
+- Language conversion only, not a rewrite
+- Return ONLY valid JSON, no markdown fences`
+          }]
+        }],
+        generationConfig: {
+          maxOutputTokens: 4000,
+          temperature: 0.1,
+          responseMimeType: "application/json",
+        }
+      })
+    }
+  )
+
+  const data = await response.json()
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
+
+  try {
+    const parsed = JSON.parse(text)
+    return {
+      v2_english: parsed.v2_english || '',
+      v3_english: parsed.v3_english || '',
+    }
+  } catch {
+    return { v2_english: '', v3_english: '' }
+  }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
