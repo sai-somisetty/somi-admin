@@ -272,15 +272,15 @@ STRUCTURE:
 
 **[Concept] ante enti?**
 
-- Core definition bullet point
-- What it means practically
+- Core definition
 - Why it exists
+- Real meaning
 
 **Enduku important?**
 
-- Reason 1
-- Reason 2
-- Exam relevance
+- Why student must know this
+- How often asked in exam
+- Practical relevance
 
 **[If concept has a hierarchy/classification/flow — MINI DIAGRAMS]**
 
@@ -303,13 +303,8 @@ entirely. Don't force them.
 **Real India lo chuddam**
 
 Pick the MOST dramatic and memorable real Indian
-example — political events, business drama,
-supply chain incidents, CMA employer stories,
-local AP/TS examples.
-Think freely — Satyam scam, Jio vs Airtel,
-Tata Nano Singur, FSSAI Maggi ban,
-COVID supply chain, GST implementation,
-CBN AP investments, Yes Bank collapse.
+example — Infosys, Tata, Zomato, Satyam, Jio, ONGC,
+Yes Bank, FSSAI, GST, COVID supply chain, AP politics.
 Show as bullet points:
 - Specific detail with real name/number
 - How concept applies exactly here
@@ -322,18 +317,15 @@ Show as bullet points:
 | Type 1   | Detail  | Real example |
 | Type 2   | Detail  | Real example |
 
-**Exam lo ela raayali?**
+**Trap awareness**
 
-- Keywords: [exact terms examiner wants]
-- Format: [points or paragraph]
-- Minimum points: [number]
-- Memory trick: [if applicable]
-- Best example to use: [company/case]
+- "Chala mandi ikkada confuse avutharu" — state the common mistake
+- What looks right but is wrong
+- How to tell the difference
 
-**Career connection**
+**Memory trick**
 
-- Which CMA employer uses this concept
-- Specific situation student will face
+- One line shortcut to remember
 
 Do NOT return JSON — plain markdown only.`
     }],
@@ -389,15 +381,15 @@ STRUCTURE:
 
 **What is [Concept]?**
 
-- Core definition bullet point
-- What it means practically
+- Core definition
 - Why it exists
+- Real meaning
 
 **Why it matters**
 
-- Reason 1
-- Reason 2
-- Exam relevance
+- Why student must know this
+- How often asked in exam
+- Practical relevance
 
 **[If concept has hierarchy — MINI DIAGRAMS]**
 
@@ -408,7 +400,9 @@ If the concept has NO hierarchy/classification/flow, skip diagrams entirely. Don
 
 **Real India**
 
-Pick memorable Indian examples — same categories as policy/business curriculum.
+Pick the most dramatic and memorable Indian example —
+Infosys, Tata, Zomato, Satyam, Jio, ONGC, Yes Bank,
+FSSAI, GST, COVID supply chain.
 Show as bullet points with specifics.
 
 **[If types/categories exist — TABLE]**
@@ -418,18 +412,15 @@ Show as bullet points with specifics.
 | Type 1   | Detail  | Real example |
 | Type 2   | Detail  | Real example |
 
-**How to write this in the exam**
+**Trap awareness**
 
-- Keywords the examiner expects
-- Format (points vs paragraph)
-- Minimum points
-- Memory trick if useful
-- Best company/example to cite
+- Common misconception students fall for
+- What looks right but is wrong
+- How to tell the difference
 
-**Career connection**
+**Memory trick**
 
-- Which employers use this
-- Situations a CMA faces
+- One line shortcut to remember
 
 Do NOT return JSON — plain markdown only.`,
     }],
@@ -474,23 +465,13 @@ ICMAI OFFICIAL TEXT:
 
 GENERATE:
 
-english_v1: SHORT AND PUNCHY in pure professional English (2-3 sentences max).
-  Same points as tenglish_v1. No Telugu. No Hindi.
-  Same opening angle family as tenglish_v1 but written in English.
+english_v1: output empty string ""
+  (English is generated in a separate pass — leave empty here.)
 
-english_v2: POINT-WISE REVISION in pure professional English.
-  Same structure and bullets/tables as tenglish_v2 but 100% English.
-  Max 150 words. Mirrors the Revise tab content.
-  • If concept has a hierarchy or classification →
-    ONE small mermaid diagram (max 3 nodes)
-\`\`\`mermaid
-    flowchart LR
-      A[Root] --> B[Type 1]
-      A --> C[Type 2]
-\`\`\`
+english_v2: output empty string ""
+  (English is generated in a separate pass — leave empty here.)
 
 english_v3: output empty string ""
-  (Master English is generated in a separate pass — leave empty here.)
 
 tenglish_v1: SHORT AND PUNCHY (2-3 sentences max)
   Core concept only. Direct and clear for the student.
@@ -527,10 +508,6 @@ is_key_concept: true if concept has Article/Section
   number OR key legal/accounting definition OR
   exam-critical formula. Otherwise false.
 
-kitty_question: output ""
-
-mama_kitty_answer: output ""
-
 check_question: 100% FORMAL ENGLISH only.
   Exactly as ICMAI exam paper.
   Tests specific concept from text above.
@@ -541,121 +518,24 @@ check_options: Array of 4 options.
 
 check_answer: Index 0-3 of correct option.
 
-trap_option: Index 0-3 of trap option.
-  MANDATORY — never output -1.
-  Most tempting wrong answer.
-  Must differ from check_answer.
-
 check_explanation: MAMA'S TENGLISH.
   Why correct answer is right.
   Reference specific text.
   Encouraging tone.
 
-mama_response_correct: Tenglish 1-2 sentences.
-  Pick from HYPE PACK — rotate, never repeat.
-  Then reinforce concept in 1 sentence.
-  NEVER use same phrase twice.
-
-mama_response_wrong: Tenglish 1-2 sentences.
-  CRITICAL: Wrong answer = learning moment NOT failure!
-  Sound playful and uplifting — like a game!
-  If student hit trap_option use trap phrases.
-  Otherwise use safety net phrases.
-  NEVER use tension oddu for wrong MCQ answer.
-  Then re-explain key point simply.
-
-mamas_tip: Exam strategy in Mama's Tenglish.
-  Format as bullet points ONLY. No paragraphs.
-  Start with "Exam lo:" then bullet points:
-  - What keywords to write
-  - How many points to write
-  - What format (paragraph/points)
-  - Any memory trick
-  Maximum 4 bullet points. Each bullet max 1 line. Start each with "•"
-
-exam_rubric: Structured JSON object for exam engine.
-  Generate this EXACTLY:
-  {
-    "must_keywords": [
-      "exact keyword 1 examiner expects",
-      "exact keyword 2",
-      "exact keyword 3",
-      "exact keyword 4"
-    ],
-    "bonus_keywords": [
-      "advanced keyword that gets extra marks",
-      "another bonus keyword"
-    ],
-    "min_points": 3,
-    "format": "paragraph or points",
-    "marks": 5,
-    "memory_trick": "Short memory trick if any else empty string",
-    "example_company": "Best company to use as example in exam",
-    "common_mistakes": [
-      "Most common mistake students make",
-      "Second common mistake",
-      "Third common mistake"
-    ],
-    "model_answer_hints": [
-      "How to START the answer",
-      "What to include in MIDDLE",
-      "How to END the answer"
-    ]
-  }
-
-  Rules for exam_rubric:
-  - must_keywords: words examiner MUST see to give marks
-    Use exact legal/accounting terminology
-    Minimum 4, maximum 8 keywords
-  - bonus_keywords: advanced terms for extra marks
-    Minimum 2 keywords
-  - min_points: minimum points student must write
-    MCQ concepts: 2-3 points
-    Theory concepts: 4-5 points
-    Complex concepts: 6-8 points
-  - format: "paragraph" for theory
-             "points" for lists/classifications
-             "both" if either works
-  - marks: typical marks in ICMAI exam (1,2,4,5,8,10)
-  - memory_trick: catchy trick to remember
-    Empty string "" if no good trick exists
-  - example_company: best real company for exam answer
-    Pick CMA employer if relevant
-    (ONGC, GAIL, Cipla, Deloitte, Tata, Reliance etc)
-  - common_mistakes: exactly 3 mistakes
-  - model_answer_hints: exactly 3 hints
-    Start/Middle/End structure
-
 RETURN EXACTLY THIS JSON:
 {
-  "english_v1": "...",
-  "english_v2": "...",
+  "english_v1": "",
+  "english_v2": "",
   "english_v3": "",
   "tenglish_v1": "...",
   "tenglish_v2": "...",
   "tenglish_v3": "",
   "is_key_concept": true,
-  "kitty_question": "",
-  "mama_kitty_answer": "",
   "check_question": "...",
   "check_options": ["option A", "option B", "option C", "option D"],
   "check_answer": 0,
-  "trap_option": 1,
-  "check_explanation": "...",
-  "mama_response_correct": "...",
-  "mama_response_wrong": "...",
-  "mamas_tip": "...",
-  "exam_rubric": {
-    "must_keywords": ["...", "...", "...", "..."],
-    "bonus_keywords": ["...", "..."],
-    "min_points": 4,
-    "format": "paragraph",
-    "marks": 5,
-    "memory_trick": "...",
-    "example_company": "...",
-    "common_mistakes": ["...", "...", "..."],
-    "model_answer_hints": ["...", "...", "..."]
-  }
+  "check_explanation": "..."
 }`;
 
   try {
@@ -679,34 +559,17 @@ RETURN EXACTLY THIS JSON:
     const data = JSON.parse(fastText);
 
     const result = {
-      english: (data.english_v1 || '').trim(),
-      english_variation_2: (data.english_v2 || '').trim(),
+      english: (deepDiveEnglish || '').trim(),
+      english_variation_2: '',
       english_variation_3: (deepDiveEnglish || '').trim(),
       tenglish: fixTelugu(data.tenglish_v1 || ''),
       tenglish_variation_2: fixTelugu(data.tenglish_v2 || ''),
       tenglish_variation_3: deepDiveText,
       is_key_concept: data.is_key_concept ?? false,
-      kitty_question: fixTelugu(data.kitty_question || ''),
-      mama_kitty_answer: fixTelugu(data.mama_kitty_answer || ''),
       check_question: data.check_question || '',
       check_options: data.check_options || ['', '', '', ''],
       check_answer: data.check_answer ?? 0,
-      trap_option: data.trap_option ?? 0,
       check_explanation: fixTelugu(data.check_explanation || ''),
-      mama_response_correct: fixTelugu(data.mama_response_correct || ''),
-      mama_response_wrong: fixTelugu(data.mama_response_wrong || ''),
-      mamas_tip: fixTelugu(data.mamas_tip || ''),
-      exam_rubric: data.exam_rubric || {
-        must_keywords: [],
-        bonus_keywords: [],
-        min_points: 3,
-        format: 'paragraph',
-        marks: 5,
-        memory_trick: '',
-        example_company: '',
-        common_mistakes: [],
-        model_answer_hints: [],
-      },
     };
 
     return NextResponse.json(result);
