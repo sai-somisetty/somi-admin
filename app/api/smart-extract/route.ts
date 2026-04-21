@@ -74,18 +74,49 @@ TEXT EXTRACTION RULES
 - Do NOT include page headers, footers, or page numbers
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FLOWCHARTS & DIAGRAMS
+FLOWCHARTS & DIAGRAMS — MOBILE FIRST
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-When you see a flowchart, diagram, or visual relationship:
+When you see a flowchart, diagram, or visual hierarchy:
 - Set content_type to "diagram"
-- In the "text" field, write the content as Mermaid syntax
-- Wrap Mermaid code in \`\`\`mermaid ... \`\`\` block (triple backtick fence)
-- Use clear labels that a student would understand
+- Write Mermaid syntax in \`\`\`mermaid ... \`\`\` block (triple backtick fence)
+- CRITICAL: Design for MOBILE PHONE (320px wide)
+
+MOBILE RULES:
+1. NEVER put more than 2 nodes side by side
+2. Use vertical flow (TD) — stack nodes top to bottom
+3. For wide hierarchies, break into MULTIPLE levels:
+   BAD (too wide):
+     A --> B & C & D & E
+
+   GOOD (stacked):
+     A --> B
+     A --> C
+     B --> D
+     C --> E
+
+4. For court/org hierarchies, use subgraphs to group:
+
+\`\`\`mermaid
+flowchart TD
+  subgraph TOP[Supreme Court]
+    SC[Supreme Court]
+  end
+  subgraph REGION[High Courts]
+    HC1[High Court]
+  end
+  subgraph DISTRICT[District Courts]
+    DC[District Court]
+  end
+  SC --> HC1
+  HC1 --> DC
+\`\`\`
+
 - Add any explanatory text BEFORE the mermaid block
+- Use clear labels that a student would understand
 
-Example — if textbook shows a flowchart of contract types:
+Example — contract types (keep each node to at most two outgoing branches to the next “row”; add extra levels instead of fanning out four ways):
 
-"text": "Types of Contracts based on formation:\n\n\`\`\`mermaid\nflowchart TD\n  A[Contract] --> B[Express Contract]\n  A --> C[Implied Contract]\n  A --> D[Quasi Contract]\n  B --> B1[Written]\n  B --> B2[Oral]\n  C --> C1[Implied by facts]\n  C --> C2[Implied by law]\n\`\`\`\n\nExpress contracts are directly stated, while implied contracts arise from circumstances."
+"text": "Types of Contracts based on formation:\n\n\`\`\`mermaid\nflowchart TD\n  A[Contract] --> B[Express Contract]\n  A --> C[Implied Contract]\n  B --> B1[Written]\n  B --> B2[Oral]\n  C --> Q[Quasi Contract]\n\`\`\`\n\nExpress contracts are directly stated; implied and quasi contracts arise from circumstances or law."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TABLES
@@ -118,6 +149,27 @@ a complex illustration):
 - The admin will upload a replacement image manually
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+METADATA FOR EACH CONCEPT (extract these)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+For every concept, also extract:
+- section_references: Any Section/Article numbers mentioned
+  (e.g. "Section 2(h)", "Section 10", "Article 141")
+- act_references: Names of Acts/Laws referenced
+  (e.g. "Indian Contract Act 1872", "Sale of Goods Act 1930")
+- case_references: Legal case names if any
+  (e.g. "Couturier v Hastie", "Balfour v Balfour")
+- keywords: 5-8 important terms from this concept
+  (these will be used for search — pick terms a student
+  would search for)
+- prerequisite_concepts: What concepts should the student
+  understand BEFORE this one? Use concept titles, not IDs.
+  (e.g. ["What is an Agreement", "Offer and Acceptance"])
+- related_concepts: Other concepts that are closely linked
+  (e.g. ["Void Agreements", "Free Consent"])
+
+If none exist for a field, use empty array [].
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT — respond ONLY with this JSON:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {
@@ -130,7 +182,13 @@ OUTPUT FORMAT — respond ONLY with this JSON:
       "text": "the complete extracted text for this concept — include ALL related paragraphs, points, and examples as one block",
       "is_key_concept": true,
       "continues_from_previous": false,
-      "continues_on_next": false
+      "continues_on_next": false,
+      "section_references": ["Section 2(h)", "Article 141"],
+      "act_references": ["Indian Contract Act 1872"],
+      "case_references": ["Couturier v Hastie"],
+      "keywords": ["contract", "agreement", "enforceable"],
+      "prerequisite_concepts": ["What is an Agreement"],
+      "related_concepts": ["Void Agreements", "Voidable Contracts"]
     }
   ]
 }
